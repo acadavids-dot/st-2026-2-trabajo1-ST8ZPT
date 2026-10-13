@@ -1,0 +1,23 @@
+# Estructura del repositorio
+
+El repositorio se llama `st-2026-2-trabajo1-ST8ZPT` y respeta los nombres exigidos por el enunciado:
+
+```
+st-2026-2-trabajo1-ST8ZPT/
+|-- README.md, .gitignore, CLAUDE.md, sesion-info.txt
+|-- datos/        los tres csv, tal como se entregaron
+|-- R/            solo funciones (00-lectura, 01-graficos, 02-operadores, 03-dependencia,
+|                 04-metodos, 05-evaluacion; auxiliares 01b a 10 para descomposición,
+|                 pruebas, regresión, flujo, configuración e informe)
+|-- analisis/     correr-todo.R, verificaciones.R, asignacion-metodos.csv
+|-- informe/      informe.qmd (+ secciones/), informe.html, nota-interesados.pdf
+|-- exposicion/   ST8ZPT.pdf
+|-- figs/         figuras de correr-todo.R, con el número de la serie en el nombre
+|-- resultados/   serie1.rds, serie2.rds, serie3.rds (calculos pesados de la sección 6)
+```
+
+**Reglas de código.** Solo se usan R base, `dplyr`, `tidyr`, `purrr`, `tibble`, `readr`, `ggplot2` y `patchwork`. Cada archivo de `R/` únicamente define funciones: no ejecuta nada ni lee datos al hacer `source()`. Ninguna función lee objetos globales; todo entra por argumentos. Las funciones `acf()`, `pacf()`, `lm()`, `Box.test()` y `diff()` solo aparecen en los bloques marcados `# --- VERIFICACION ---` de `analisis/verificaciones.R`, donde se contrasta cada implementación propia contra la de R; ninguna función de series de tiempo de un paquete se usa en ningún método.
+
+**Contrato de cada método.** Cada `ajustar_xxx(y, ...)` valida sus entradas (numéricas, sin `NA`, longitud suficiente, parámetros en rango) y devuelve una lista con tres componentes: `yhat`, el vector de pronósticos de un paso, donde `yhat[t]` usa la información hasta `t-1` y las posiciones de calentamiento son `NA`; `pronosticar(h)`, una función que devuelve $\hat Y_{T+1},\dots,\hat Y_{T+h}$ y solo usa el estado del ajuste; y `parametros`, con las constantes y los valores iniciales. Hay una excepción declarada: en Holt–Winters, por la convención de las notas de clase, los estados iniciales se calculan con todos los ciclos completos de la serie que se ajusta, de modo que los primeros `yhat` dependen de esa serie completa; la evaluación de origen móvil no se contamina porque en cada origen el método recibe únicamente `y[1:o]`.
+
+**Cómo se reproduce.** Desde la raíz del repositorio, en R 4.3 o posterior: `source("analisis/correr-todo.R")` carga `R/`, corre las verificaciones, analiza las tres series, guarda las figuras en `figs/` y los resultados en `resultados/` y escribe `sesion-info.txt`; luego `quarto render informe/informe.qmd` produce este documento.

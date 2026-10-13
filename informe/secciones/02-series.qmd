@@ -1,0 +1,51 @@
+# Las tres series y la pregunta de pronóstico
+
+## Ficha de cada serie
+
+Las fichas se calculan con `ficha_serie()` sobre los archivos tal como se entregaron; `leer_serie()` verifica que no haya faltantes, fechas duplicadas ni desorden cronológico.
+
+```{r}
+#| label: tbl-fichas
+f <- data.frame(
+  Serie = 1:3,
+  Nombre = fichas$nombre,
+  Unidad = fichas$unidad,
+  Frecuencia = fichas$frecuencia,
+  Inicio = ffecha(fichas$inicio),
+  Fin = ffecha(fichas$fin),
+  T = fichas$T,
+  Mínimo = fichas$minimo,
+  Máximo = fichas$maximo,
+  Media = fichas$media
+)
+tabla(f, digits = 2)
+```
+
+## Pregunta, decisión y horizonte
+
+**Serie 1 — llegadas mensuales de turistas (miles de personas).** *Pregunta:* ¿cuántos miles de turistas llegarán a Bahía Serena en cada uno de los próximos 12 meses? *Decisión:* la alcaldía negocia vuelos adicionales y contrata policía de turismo y salvavidas con seis meses de anticipación; un vuelo sin ocupación suficiente se paga con recursos públicos y la falta de personal causa accidentes y quejas. *Horizonte:* $H = `r series[[1]]$H`$ meses, que es lo que pide la pregunta.
+
+**Serie 2 — habitaciones ocupadas por noche.** *Pregunta:* ¿cuántas habitaciones se ocuparán cada noche de la semana siguiente (lunes a domingo)? *Decisión:* cada domingo el hotel programa la limpieza de esa semana, a una camarera por cada 14 habitaciones ocupadas, y decide cuántas reservas acepta por encima de su capacidad de 340; reubicar a un huésped cuesta 450 000 COP por noche. *Horizonte:* $H = `r series[[2]]$H`$ días. La serie termina un viernes (`r ffecha(fichas$fin[2])`), así que sábado y domingo son los pasos 1 y 2 y la semana lunes–domingo que importa ocupa los pasos 3 a 9; con $H = 7$ no se llegaría al domingo de esa semana.
+
+**Serie 3 — estudiantes matriculados.** *Pregunta:* ¿cuántos tutores se deben contratar para el próximo semestre? *Decisión:* cada tutor atiende hasta 25 estudiantes y se contrata por seis meses; un tutor de más cuesta 3,2 millones de pesos al mes y un grupo sin tutor genera deserción y quejas. Como el contrato cubre todo el semestre, hay que cubrir la matrícula del mes más alto: *horizonte* $H = `r series[[3]]$H`$ meses.
+
+## Partición para la evaluación
+
+Con $n_0 = \lfloor 0{,}8\,T \rfloor$, las constantes y ventanas se eligen solo en las observaciones $1,\dots,n_0$ por MSE de un paso. La evaluación es de origen móvil con esos parámetros fijos: para $h=1$ los orígenes son $o = n_0,\dots,T-1$ y para $h = H$ son $o = n_0,\dots,T-H$; en cada origen el método recibe únicamente $y_1,\dots,y_o$. $m = \min\{\lfloor T/4 \rfloor, 24\}$ es el número de rezagos del correlograma.
+
+```{r}
+#| label: tbl-particion
+p <- data.frame(
+  Serie = 1:3,
+  T = particion$T,
+  n0 = particion$n0,
+  `Fin del tramo de estimación` = ffecha(particion$fin_estimacion),
+  `Inicio de la evaluación` = ffecha(particion$inicio_evaluacion),
+  H = particion$H,
+  `Orígenes h = 1` = particion$origenes_h1,
+  `Orígenes h = H` = particion$origenes_H,
+  m = particion$m,
+  check.names = FALSE
+)
+tabla(p, digits = 0)
+```

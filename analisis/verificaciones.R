@@ -196,6 +196,68 @@ verificar(isTRUE(all.equal(unname(unlist(medidas(c(1, -2, 3), c(10, 20, 30))[, c
                            c(sqrt(14 / 3), 2, 10))),
           "medidas: e = (1, -2, 3), real = (10, 20, 30) da RMSE = sqrt(14/3), MAD = 2, MAPE = 10 %")
 
+# --- VERIFICACION: SES, DMM, Holt y Holt-Winters contra cifras de las notas de clase (clases 4 y 5) ---
+# SES a mano: y = (10, 20, 30), alpha = 0.5 -> yhat = (NA, 10, 15) y Yhat_4 = 0.5*30 + 0.5*15 = 22.5
+ses_h <- ajustar_ses(c(10, 20, 30), 0.5)
+verificar(igual_na(ses_h$yhat, c(NA, 10, 15)) && abs(ses_h$pronosticar(2)[1] - 22.5) < 1e-12,
+          "ajustar_ses: ejemplo a mano (yhat = NA, 10, 15; pronostico 22.5)")
+# Creditos al consumo (notas, clase 4 diap. 66 y clase 5 diap. 47), 11 meses
+cred <- c(133, 155, 165, 171, 194, 231, 274, 312, 313, 333, 343)
+ho <- ajustar_holt(cred, 0.3, 0.4)
+L_notas <- c(133, 139.600, 149.068, 159.407, 174.936, 199.194, 232.891, 272.812, 305.759, 335.691, 359.321)
+T_notas <- c(0, 2.640, 5.371, 7.358, 10.627, 16.079, 23.126, 29.844, 31.085, 30.624, 27.826)
+yh_notas <- c(NA, 133, 142.240, 154.439, 166.766, 185.563, 215.273, 256.017, 302.656, 336.845, 366.315)
+e_ho <- cred - ho$yhat
+verificar(max(abs(ho$parametros$nivel_t - L_notas)) < 1e-3 && max(abs(ho$parametros$pendiente_t - T_notas)) < 1e-3 &&
+            max(abs(ho$yhat - yh_notas), na.rm = TRUE) < 1e-3,
+          "ajustar_holt(0.3, 0.4) reproduce las columnas L, T y yhat de la tabla de las notas (creditos al consumo)")
+verificar(sum(!is.na(e_ho)) == 10 && abs(mean(e_ho^2, na.rm = TRUE) - 1133.08) < 0.01 && abs(mean(abs(e_ho), na.rm = TRUE) - 28.62) < 0.01 &&
+            max(abs(ho$pronosticar(3) - c(387.15, 414.97, 442.80))) < 0.01,
+          "ajustar_holt: N = 10, MSE = 1133.08, MAD = 28.62 y pronosticos 387.15, 414.97, 442.80 como en las notas")
+dm3 <- ajustar_dmm(cred, 3)
+e_dm <- cred - dm3$yhat
+verificar(sum(!is.na(e_dm)) == 6 && abs(mean(e_dm^2, na.rm = TRUE) - 841.24) < 0.01 && abs(mean(abs(e_dm), na.rm = TRUE) - 28.20) < 0.01 &&
+            max(abs(dm3$pronosticar(3) - c(356.56, 370.00, 383.44))) < 0.01,
+          "ajustar_dmm(3): N = 6, MSE = 841.24, MAD = 28.20 y pronosticos 356.56, 370.00, 383.44 como en las notas")
+# Ventas trimestrales (notas, clase 5 diap. 54): Holt-Winters aditivo (0.3, 0.05, 0.3), paso t = 5
+ventas <- c(1.5, 4.3, 8.9, 12.5, 1.8, 4.5, 9.0, 12.1, 1.2, 4.6, 8.1, 12.9, 1.9, 5.1, 8.6, 13.2)
+hw_v <- ajustar_hw(ventas, 4, 0.3, 0.05, 0.3)
+verificar(abs(hw_v$parametros$b0 - 0.4 / 12) < 1e-12 && abs(hw_v$parametros$L0 - 6.75) < 1e-12 && abs(sum(hw_v$parametros$S0)) < 1e-12,
+          "ajustar_hw: inicializacion a mano (b0 = 0.4/12, L0 = 6.8 - 1.5 b0 = 6.75, indices con suma cero hasta 1e-12)")
+verificar(abs(hw_v$yhat[5] - 1.6505) < 5e-5 && abs((ventas[5] - hw_v$yhat[5]) - 0.1495) < 5e-5,
+          "ajustar_hw: el pronostico del paso t = 5 es 1.6505 y su error 0.1495, como en 'Un periodo al detalle' de las notas")
+# Serie aditiva exacta sin ruido: la inicializacion recupera exactamente (L0, b0, S0). Las notas usan (L0, b0) como estado
+# PREVIO a t = 1, asi que yhat[1] = L0 + b0 (el nivel de t = 2) y el primer error es -b0; la recursion lo va absorbiendo.
+y_hw_exacta <- 100 + 0.5 * (1:48) + rep(c(-3, 1, 5, -2, 4, -5), 8)
+hw_e <- ajustar_hw(y_hw_exacta, 6, 0.4, 0.2, 0.3)
+verificar(abs(hw_e$parametros$L0 - 100.5) < 1e-9 && abs(hw_e$parametros$b0 - 0.5) < 1e-9 &&
+            max(abs(hw_e$parametros$S0 - c(-3, 1, 5, -2, 4, -5))) < 1e-9 && abs((y_hw_exacta[1] - hw_e$yhat[1]) + 0.5) < 1e-9,
+          "ajustar_hw: sobre una serie aditiva exacta, la inicializacion es exacta y el primer error es -b0 (convencion de las notas)")
+verificar(abs(y_hw_exacta[48] - hw_e$yhat[48]) < 0.05 &&
+            max(abs(hw_e$pronosticar(6) - (100 + 0.5 * 49:54 + c(-3, 1, 5, -2, 4, -5)))) < 0.05,
+          "ajustar_hw: la recursion absorbe el desfase inicial (error final < 0.05 en yhat[48] y en el pronostico a 6 pasos)")
+y_mult_ver <- (50 + 0.4 * (1:60)) * rep(c(0.8, 1.1, 1.3, 0.9, 1.2, 0.7), 10)
+hm <- ajustar_hw_mult(y_mult_ver, 6, 0.2, 0.1, 0.2)
+verif_mult <- (50 + 0.4 * 61:66) * c(0.8, 1.1, 1.3, 0.9, 1.2, 0.7)
+verificar(abs(mean(hm$parametros$S0) - 1) < 1e-12 && max(abs(hm$pronosticar(6) / verif_mult - 1)) < 0.05,
+          "ajustar_hw_mult: indices iniciales con media 1 y pronostico con error relativo < 5 % sobre una serie multiplicativa sin ruido")
+ok_valid2 <- all(vapply(list(
+  function() ajustar_ses(1:5, 1), function() ajustar_holt(1:5, 0.5, 0), function() ajustar_dmm(1:5, 3),
+  function() ajustar_hw(1:10, 6, 0.3, 0.1, 0.1), function() ajustar_hw_mult(c(1:11, -1), 6, 0.3, 0.1, 0.1)),
+  function(f) inherits(try(f(), silent = TRUE), "try-error"), logical(1)))
+verificar(ok_valid2, "SES, Holt, DMM y HW rechazan constantes fuera de (0,1), series cortas (< 2k o < 2 ciclos) y y <= 0 en el multiplicativo")
+metodos_c2 <- list(ses = function(y) ajustar_ses(y, 0.3), dmm = function(y) ajustar_dmm(y, 4), holt = function(y) ajustar_holt(y, 0.3, 0.2))
+ok_contrato2 <- vapply(metodos_c2, function(f) {
+  a <- f(y_c); b <- f(y_mod)
+  identical(names(a), c("yhat", "pronosticar", "parametros")) && length(a$yhat) == length(y_c) && length(a$pronosticar(5)) == 5 &&
+    igual_na(a$yhat[1:t0], b$yhat[1:t0]) && !isTRUE(all.equal(a$yhat[(t0 + 1):(t0 + 5)], b$yhat[(t0 + 1):(t0 + 5)]))
+}, logical(1))
+verificar(all(ok_contrato2), "SES, DMM y Holt cumplen el contrato y su yhat[1..t] no depende de y[t] ni del futuro")
+hw_c <- ajustar_hw(y_c, 4, 0.3, 0.1, 0.2); hwm_c <- ajustar_hw_mult(y_c, 4, 0.3, 0.1, 0.2)
+verificar(all(vapply(list(hw_c, hwm_c), function(a) identical(names(a), c("yhat", "pronosticar", "parametros")) &&
+                       length(a$yhat) == length(y_c) && length(a$pronosticar(9)) == 9 && !anyNA(a$yhat), logical(1))),
+          "Holt-Winters (aditivo y multiplicativo) cumplen el contrato; su yhat inicial usa los ciclos completos, como las notas")
+
 # --- VERIFICACION: numero de origenes sobre las series reales contra la tabla de particion ---
 H_ver <- c(12, 9, 6)
 esperado_orig <- list(c(36, 25), c(36, 28), c(26, 21))

@@ -67,6 +67,29 @@ correlograma <- function(r, n, titulo = "Correlograma (ACF)", ylab = "Autocorrel
     ggplot2::theme_minimal(base_size = 11)
 }
 
+# Raices de polinomios en B en el plano complejo, con el circulo unitario.
+# raices: lista con nombre de tibbles (re, im, modulo) como los de polinomio_rezago().
+grafico_raices <- function(raices) {
+  stopifnot(is.list(raices), !is.null(names(raices)))
+  d <- do.call(rbind, lapply(names(raices), function(nm) {
+    r <- raices[[nm]]
+    data.frame(polinomio = nm, re = r$re, im = r$im)
+  }))
+  d$polinomio <- factor(d$polinomio, levels = names(raices))
+  th <- seq(0, 2 * pi, length.out = 200)
+  circ <- data.frame(re = cos(th), im = sin(th))
+  ggplot2::ggplot(d, ggplot2::aes(re, im)) +
+    ggplot2::geom_path(data = circ, colour = "grey50") +
+    ggplot2::geom_hline(yintercept = 0, colour = "grey85") +
+    ggplot2::geom_vline(xintercept = 0, colour = "grey85") +
+    ggplot2::geom_point(colour = "firebrick", size = 2, alpha = 0.8) +
+    ggplot2::facet_wrap(~polinomio) +
+    ggplot2::coord_equal() +
+    ggplot2::labs(title = "Raices de los polinomios en B", x = "Parte real", y = "Parte imaginaria",
+                  caption = "Circulo unitario en gris; todas las raices de un factor de diferencia tienen modulo 1") +
+    ggplot2::theme_minimal(base_size = 11)
+}
+
 # Panel de la descomposicion: observada, tendencia, componente estacional y residuo.
 grafico_descomposicion <- function(d, desc, unidad) {
   stopifnot(is.data.frame(d), is.list(desc), length(desc$tendencia) == nrow(d))

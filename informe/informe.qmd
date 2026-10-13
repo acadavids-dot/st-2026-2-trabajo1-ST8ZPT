@@ -4,7 +4,6 @@ subtitle: "Descripción, operador de rezago, dependencia, pronóstico y argument
 author:
   - Andrés Felipe Cadavid Sanguino
   - Samuel Cárdenas García
-  - Luis Miguel Duque Aristizábal
 date: "2026-10-16"
 lang: es
 format:

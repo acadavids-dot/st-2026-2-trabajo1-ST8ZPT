@@ -1,4 +1,4 @@
-# 08-flujo.R — flujo completo de la seccion 6 para UNA serie (metodos, rejillas, origen movil, tablas, ganador,
+# 08-flujo.R — flujo completo de la seccion 6 para UNA serie (metodos, rejillas, origen móvil, tablas, ganador,
 # regresiones, validacion y pronostico final). Solo define funciones: no ejecuta nada al hacer source().
 # Todo entra por argumentos: ninguna funcion lee objetos globales.
 
@@ -10,19 +10,19 @@ catalogo_metodos <- function(s) {
     media = cat1("Media simple", ajustar_media),
     ingenuo = cat1("Ingenuo", ajustar_ingenuo),
     ingenuo_est = cat1(paste0("Ingenuo estacional (s = ", s, ")"), ajustar_ingenuo_estacional, fijos = list(s = s)),
-    mm = cat1("Media movil MM(k)", ajustar_mm, data.frame(k = 2:12)),
+    mm = cat1("Media móvil MM(k)", ajustar_mm, data.frame(k = 2:12)),
     ses = cat1("Suavizamiento exponencial simple", ajustar_ses, data.frame(alpha = round(seq(0.02, 0.98, by = 0.02), 2))),
-    dmm = cat1("Doble media movil DMM(k)", ajustar_dmm, data.frame(k = 3:12)),
+    dmm = cat1("Doble media móvil DMM(k)", ajustar_dmm, data.frame(k = 3:12)),
     tend_lineal = cat1("Tendencia lineal", function(y) ajustar_tendencia(y, "lineal")),
-    tend_cuad = cat1("Tendencia cuadratica", function(y) ajustar_tendencia(y, "cuadratica")),
+    tend_cuad = cat1("Tendencia cuadrática", function(y) ajustar_tendencia(y, "cuadratica")),
     tend_exp = cat1("Tendencia exponencial", function(y) ajustar_tendencia(y, "exponencial")),
     tend_est = cat1(paste0("Tendencia + ficticias (s = ", s, ")"), ajustar_tendencia_estacional, fijos = list(s = s)),
     holt = cat1("Holt", ajustar_holt,
                 expand.grid(alpha = round(seq(0.05, 0.95, by = 0.05), 2), beta = round(seq(0.05, 0.95, by = 0.05), 2))),
-    hw = cat1(paste0("Holt-Winters aditivo (s = ", s, ")"), ajustar_hw,
+    hw = cat1(paste0("Holt–Winters aditivo (s = ", s, ")"), ajustar_hw,
               expand.grid(alpha = seq(0.1, 0.9, by = 0.1), beta = seq(0.1, 0.9, by = 0.1), gamma = seq(0.1, 0.9, by = 0.1)),
               list(s = s)),
-    hw_mult = cat1(paste0("Holt-Winters multiplicativo (s = ", s, ")"), ajustar_hw_mult,
+    hw_mult = cat1(paste0("Holt–Winters multiplicativo (s = ", s, ")"), ajustar_hw_mult,
                    expand.grid(alpha = seq(0.1, 0.9, by = 0.1), beta = seq(0.1, 0.9, by = 0.1), gamma = seq(0.1, 0.9, by = 0.1)),
                    list(s = s))
   )
@@ -42,7 +42,7 @@ fechas_futuras <- function(ultima, H, frecuencia) {
   else stop("frecuencia debe ser 'mensual' o 'diaria'.")
 }
 
-# Tabla de origen movil para un horizonte h: RMSE, MAD y MAPE por metodo, ordenada por RMSE, con el referente como una fila.
+# Tabla de origen móvil para un horizonte h: RMSE, MAD y MAPE por metodo, ordenada por RMSE, con el referente como una fila.
 # Exige que todos los metodos tengan exactamente los mismos origenes (condicion de comparabilidad).
 tabla_horizonte <- function(ajustes, h) {
   err <- lapply(ajustes, function(a) errores_horizonte(a$om, h))
@@ -91,7 +91,7 @@ analizar_serie <- function(y, fechas, cfg) {
   catalogo <- catalogo_metodos(cfg$s)
   stopifnot(all(asig$id %in% names(catalogo)))
 
-  # 1) parametros por MSE de un paso en 1..n0 y 2) origen movil con parametros fijos
+  # 1) parametros por MSE de un paso en 1..n0 y 2) origen móvil con parametros fijos
   ajustes <- lapply(seq_len(nrow(asig)), function(i) {
     sp <- catalogo[[asig$id[i]]]
     opt <- NULL
@@ -108,7 +108,7 @@ analizar_serie <- function(y, fechas, cfg) {
   })
   names(ajustes) <- asig$id
 
-  # 3) tablas de origen movil en h = 1 y h = H
+  # 3) tablas de origen móvil en h = 1 y h = H
   tabla_h1 <- tabla_horizonte(ajustes, 1)
   tabla_H <- tabla_horizonte(ajustes, H)
   n_h1 <- T - 1 - n0 + 1
@@ -127,14 +127,14 @@ analizar_serie <- function(y, fechas, cfg) {
   })
   names(regresiones) <- intersect(names(tipos_reg), asig$id)
 
-  # 6) validacion del ganador de h = 1 sobre sus errores de origen movil (no sobre los residuos del ajuste)
+  # 6) validacion del ganador de h = 1 sobre sus errores de origen móvil (no sobre los residuos del ajuste)
   e1 <- errores_horizonte(ajustes[[ganador_h1]]$om, 1)
   m_val <- max(1, floor(length(e1$e) / 4))
   validacion <- c(list(id = ganador_h1, e = e1$e, origenes = e1$origenes, fechas_objetivo = fechas[e1$origenes + 1], m = m_val),
-                  validar_errores(e1$e, m_val, paste0("los errores de origen movil a un paso de ", ajustes[[ganador_h1]]$etiqueta)))
+                  validar_errores(e1$e, m_val, paste0("los errores de origen móvil a un paso de ", ajustes[[ganador_h1]]$etiqueta)))
 
   # 7) pronostico final: ganador de h = H reajustado sobre toda la serie; banda heuristica con la sd de los errores
-  #    de origen movil a cada horizonte (no es un intervalo de confianza)
+  #    de origen móvil a cada horizonte (no es un intervalo de confianza)
   g <- ajustes[[ganador_H]]
   fc <- do.call(g$ajustar, c(list(y), g$parametros))$pronosticar(H)
   sd_h <- vapply(seq_len(H), function(h) stats::sd(errores_horizonte(g$om, h)$e), numeric(1))
@@ -154,7 +154,7 @@ grafico_mse <- function(opt, etiqueta) {
   curva <- as.data.frame(opt$curva)
   pars <- names(curva)[names(curva) != "mse"]
   mejor <- as.data.frame(opt$mejor)
-  cap <- paste0("n = ", opt$n_comun, " errores de un paso en el tramo de estimacion; optimo (rojo): ",
+  cap <- paste0("n = ", opt$n_comun, " errores de un paso en el tramo de estimación; óptimo (rojo): ",
                 paste(pars, "=", vapply(pars, function(p) format(round(mejor[[p]], 3)), character(1)), collapse = ", "),
                 "; MSE = ", format(round(mejor$mse, 4)))
   base <- ggplot2::theme_minimal(base_size = 11)
@@ -179,7 +179,7 @@ grafico_mse <- function(opt, etiqueta) {
   p + ggplot2::labs(title = paste0("MSE de un paso: ", etiqueta), caption = cap) + base
 }
 
-# Errores de origen movil a un paso en el tiempo (fecha del dato pronosticado).
+# Errores de origen móvil a un paso en el tiempo (fecha del dato pronosticado).
 grafico_errores <- function(e, fechas_objetivo, unidad, titulo, date_breaks = NULL, date_labels = "%Y-%m") {
   stopifnot(length(e) == length(fechas_objetivo))
   d <- data.frame(fecha = fechas_objetivo, e = e)
@@ -188,7 +188,7 @@ grafico_errores <- function(e, fechas_objetivo, unidad, titulo, date_breaks = NU
     ggplot2::geom_line(linewidth = 0.5) + ggplot2::geom_point(size = 1.2) +
     ggplot2::scale_x_date(date_labels = date_labels, date_breaks = if (is.null(date_breaks)) ggplot2::waiver() else date_breaks) +
     ggplot2::labs(title = titulo, x = "Fecha del dato pronosticado", y = paste0("Error (", unidad, ")"),
-                  caption = paste0("n = ", length(e), " errores de origen movil a un paso")) +
+                  caption = paste0("n = ", length(e), " errores de origen móvil a un paso")) +
     ggplot2::theme_minimal(base_size = 11)
 }
 
@@ -203,9 +203,9 @@ grafico_pronostico <- function(fechas, y, pronostico, unidad, metodo, ultimos = 
     ggplot2::geom_line(data = pronostico, ggplot2::aes(fecha, pronostico), colour = "firebrick") +
     ggplot2::geom_point(data = pronostico, ggplot2::aes(fecha, pronostico), colour = "firebrick", size = 1.2) +
     ggplot2::scale_x_date(date_labels = date_labels, date_breaks = if (is.null(date_breaks)) ggplot2::waiver() else date_breaks) +
-    ggplot2::labs(title = paste0("Pronostico a ", nrow(pronostico), " pasos: ", metodo),
+    ggplot2::labs(title = paste0("Pronóstico a ", nrow(pronostico), " pasos: ", metodo),
                   x = "Fecha", y = unidad,
-                  caption = paste0("Ultimas ", length(idx), " observaciones (n total = ", length(y), ").\n",
-                                   "Banda HEURISTICA: pronostico +-1,96 sd de los errores de origen movil a cada horizonte (no es un intervalo de confianza).")) +
+                  caption = paste0("Últimas ", length(idx), " observaciones (n total = ", length(y), ").\n",
+                                   "Banda HEURÍSTICA: pronostico +-1,96 sd de los errores de origen móvil a cada horizonte (no es un intervalo de confianza).")) +
     ggplot2::theme_minimal(base_size = 11)
 }

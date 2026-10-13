@@ -46,7 +46,7 @@ candidatas <- definir_candidatas()
 tabla_cand <- lapply(seq_along(series), function(i) evaluar_candidatas(datos[[i]]$valor, candidatas[[i]]))
 for (i in seq_along(series)) { cat("\nSerie", i, "- candidatas\n"); print(as.data.frame(tabla_cand[[i]])) }
 
-# Identidad Var(grad Y) = 2 gamma(0) - 2 gamma(1) sobre cada serie (con log en la 1).
+# Identidad: varianza de (grad Y) = 2 gamma(0) - 2 gamma(1) sobre cada serie (con log en la 1).
 identidad <- dplyr::bind_rows(lapply(seq_along(series), function(i) {
   dplyr::mutate(identidad_var_diferencia(datos[[i]]$valor), serie = i, .before = 1)
 }))

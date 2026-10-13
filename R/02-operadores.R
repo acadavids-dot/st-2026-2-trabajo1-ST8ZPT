@@ -1,7 +1,7 @@
 # 02-operadores.R — operador de rezago B, diferencias y raices de polinomios en B.
 # Solo define funciones: no ejecuta nada al hacer source().
 
-# Aplica (1-B)^d (1-B^s)^D a y, sin usar diff().
+# Aplica (1-B)^d (1-B^s)^D a y, sin usar la funcion diff de R.
 # (1-B) y_t = y_t - y_{t-1}; (1-B^s) y_t = y_t - y_{t-s}. Los operadores conmutan, asi que el orden no importa.
 # Cada aplicacion de lag L pierde L observaciones al inicio, por eso el resultado tiene
 # length(y) - d - D*s valores (no se rellena con NA).
@@ -72,7 +72,7 @@ aplicar_candidata <- function(y, cd) {
 }
 
 # Residuos de ajustar por minimos cuadrados una tendencia polinomial de grado `grado` en t = 1..n.
-# Se resuelven las ecuaciones normales (X'X) b = X'y; sin lm(). Con un intercepto en el modelo,
+# Se resuelven las ecuaciones normales (X'X) b = X'y; sin la funcion lm de R. Con un intercepto en el modelo,
 # la media de los residuos es 0 por construccion (la tendencia absorbe el nivel).
 residuos_tendencia <- function(y, grado = 1) {
   stopifnot(is.numeric(y), !anyNA(y), is.numeric(grado), length(grado) == 1, grado >= 0, grado == round(grado),
@@ -83,7 +83,7 @@ residuos_tendencia <- function(y, grado = 1) {
   list(coeficientes = as.numeric(b), ajustado = as.numeric(X %*% b), residuos = as.numeric(y - X %*% b))
 }
 
-# Identidad Var(grad Y) = 2 gamma(0) - 2 gamma(1), con gamma muestrales (divisor n).
+# Identidad: varianza de (grad Y) = 2 gamma(0) - 2 gamma(1), con gamma muestrales (divisor n).
 # Devuelve ambos lados: son casi iguales; la diferencia viene solo de los efectos de borde
 # (la varianza de grad Y usa n-1 terminos y su propia media).
 identidad_var_diferencia <- function(y) {

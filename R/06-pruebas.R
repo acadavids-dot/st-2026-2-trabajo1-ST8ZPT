@@ -34,11 +34,11 @@ imprimir_prueba <- function(p) {
   c(
     paste0("**", p$nombre, "**"),
     "",
-    paste0("1. **Hipotesis.** H0: ", p$h0, ". H1: ", p$h1, "."),
-    paste0("2. **Estadistico.** ", p$estadistico, " = ", p$formula, ". Bajo H0: ", p$distribucion, "."),
-    paste0("3. **Region de rechazo al ", formatear_num(100 * p$alpha, 2), " %.** ", p$region, "."),
-    paste0("4. **Valor observado.** ", p$estadistico, " = ", formatear_num(p$observado), "; valor p = ", formatear_p(p$valor_p), "."),
-    paste0("5. **Decision.** ", p$decision, "."),
+    paste0("1. **Hipótesis.** $H_0$: ", p$h0, ". $H_1$: ", p$h1, "."),
+    paste0("2. **Estadístico.** $", p$estadistico, " = ", p$formula, "$. Bajo $H_0$: ", p$distribucion, "."),
+    paste0("3. **Región de rechazo al ", formatear_num(100 * p$alpha, 2), " %.** ", p$region, "."),
+    paste0("4. **Valor observado.** $", p$estadistico, " = ", formatear_num(p$observado), "$; valor p = ", formatear_p(p$valor_p), "."),
+    paste0("5. **Decisión.** ", p$decision, "."),
     paste0("6. **Lectura.** ", p$lectura)
   )
 }
@@ -52,12 +52,12 @@ prueba_t_media <- function(e, que = "los errores", alpha = 0.05) {
   crit <- stats::qt(1 - alpha / 2, n - 1)
   nueva_prueba(
     nombre = paste0("Prueba t de media cero sobre ", que),
-    h0 = "mu = 0", h1 = "mu distinto de 0",
-    estadistico = "t", formula = "media / (s / sqrt(n))",
-    distribucion = paste0("t de Student con ", n - 1, " grados de libertad"),
-    region = paste0("|t| > ", formatear_num(crit)), valor_critico = crit,
+    h0 = "$\\mu = 0$", h1 = "$\\mu \\neq 0$",
+    estadistico = "t", formula = "\\frac{\\bar{x}}{s/\\sqrt{n}}",
+    distribucion = paste0("$t$ de Student con ", n - 1, " grados de libertad"),
+    region = paste0("$|t| > ", formatear_num(crit), "$"), valor_critico = crit,
     observado = t_obs, valor_p = 2 * stats::pt(abs(t_obs), n - 1, lower.tail = FALSE),
-    lectura_rechaza = paste0("La media de ", que, " (", formatear_num(mean(e)), ") es distinta de 0: el metodo se equivoca en una direccion (sesgo)."),
+    lectura_rechaza = paste0("La media de ", que, " (", formatear_num(mean(e)), ") es distinta de 0: el método se equivoca en una dirección (sesgo)."),
     lectura_no_rechaza = paste0("No hay evidencia de que la media de ", que, " (", formatear_num(mean(e)), ") sea distinta de 0: no se detecta sesgo."),
     alpha = alpha
   )
@@ -76,13 +76,13 @@ jarque_bera <- function(x, que = "los errores", alpha = 0.05) {
   crit <- stats::qchisq(1 - alpha, 2)
   res <- nueva_prueba(
     nombre = paste0("Prueba de Jarque-Bera sobre ", que),
-    h0 = "asimetria = 0 y curtosis = 3 (normalidad)", h1 = "asimetria distinta de 0 o curtosis distinta de 3",
-    estadistico = "JB", formula = "(n/6) (S^2 + (K-3)^2/4)",
-    distribucion = "chi-cuadrado con 2 grados de libertad",
-    region = paste0("JB > ", formatear_num(crit)), valor_critico = crit,
+    h0 = "asimetría $= 0$ y curtosis $= 3$ (normalidad)", h1 = "asimetría $\\neq 0$ o curtosis $\\neq 3$",
+    estadistico = "JB", formula = "\\frac{n}{6}\\left(S^2 + \\frac{(K-3)^2}{4}\\right)",
+    distribucion = "$\\chi^2$ con 2 grados de libertad",
+    region = paste0("$JB > ", formatear_num(crit), "$"), valor_critico = crit,
     observado = JB, valor_p = stats::pchisq(JB, 2, lower.tail = FALSE),
-    lectura_rechaza = paste0(que, " no son normales (S = ", formatear_num(S), ", K = ", formatear_num(K), "): la banda de +-1,96 sd debe leerse con cautela."),
-    lectura_no_rechaza = paste0("No hay evidencia contra la normalidad de ", que, " (S = ", formatear_num(S), ", K = ", formatear_num(K), ")."),
+    lectura_rechaza = paste0(que, " no son normales ($S =$ ", formatear_num(S), ", $K =$ ", formatear_num(K), "): la banda de ±1,96 desviaciones debe leerse con cautela."),
+    lectura_no_rechaza = paste0("No hay evidencia contra la normalidad de ", que, " ($S =$ ", formatear_num(S), ", $K =$ ", formatear_num(K), ")."),
     alpha = alpha
   )
   res$asimetria <- S
@@ -98,7 +98,7 @@ durbin_watson <- function(e) {
   d <- sum((e[-1] - e[-n])^2) / sum(e^2)
   r1 <- acf_muestral(e, 1)
   tibble::tibble(d = d, r1 = r1, aprox_2_1_menos_r1 = 2 * (1 - r1),
-                 lectura = if (d < 1.5) "d claramente menor que 2: autocorrelacion positiva de orden 1"
-                           else if (d > 2.5) "d claramente mayor que 2: autocorrelacion negativa de orden 1"
-                           else "d cerca de 2: sin autocorrelacion de orden 1 apreciable")
+                 lectura = if (d < 1.5) "d claramente menor que 2: autocorrelación positiva de orden 1"
+                           else if (d > 2.5) "d claramente mayor que 2: autocorrelación negativa de orden 1"
+                           else "d cerca de 2: sin autocorrelación de orden 1 apreciable")
 }

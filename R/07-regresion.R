@@ -35,13 +35,13 @@ mco_hac <- function(y, X, L = NULL, nombres = NULL) {
   pruebas <- lapply(seq_len(k), function(j) {
     nueva_prueba(
       nombre = paste0("Prueba t (error robusto HAC) para el coeficiente ", nombres[j]),
-      h0 = paste0("beta_", nombres[j], " = 0"), h1 = paste0("beta_", nombres[j], " distinto de 0"),
-      estadistico = "t", formula = "beta_hat / EE_HAC(beta_hat)",
-      distribucion = paste0("t de Student con ", gl, " grados de libertad (aproximada)"),
-      region = paste0("|t| > ", formatear_num(crit)), valor_critico = crit,
+      h0 = paste0("$\\beta_{\\text{", nombres[j], "}} = 0$"), h1 = paste0("$\\beta_{\\text{", nombres[j], "}} \\neq 0$"),
+      estadistico = "t", formula = "\\frac{\\hat\\beta}{EE_{HAC}(\\hat\\beta)}",
+      distribucion = paste0("$t$ de Student con ", gl, " grados de libertad (aproximada)"),
+      region = paste0("$|t| > ", formatear_num(crit), "$"), valor_critico = crit,
       observado = t_hac[j], valor_p = tabla$valor_p[j],
-      lectura_rechaza = paste0("El termino ", nombres[j], " aporta a la explicacion de la serie."),
-      lectura_no_rechaza = paste0("No hay evidencia de que el termino ", nombres[j], " sea distinto de 0.")
+      lectura_rechaza = paste0("El término ", nombres[j], " aporta a la explicación de la serie."),
+      lectura_no_rechaza = paste0("No hay evidencia de que el término ", nombres[j], " sea distinto de 0.")
     )
   })
   names(pruebas) <- nombres

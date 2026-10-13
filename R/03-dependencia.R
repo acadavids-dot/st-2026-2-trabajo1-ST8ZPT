@@ -2,7 +2,7 @@
 # Solo define funciones: no ejecuta nada al hacer source().
 
 # ACF muestral r_1..r_m: r_k = sum_{t=1}^{n-k} (y_t - ybar)(y_{t+k} - ybar) / sum_t (y_t - ybar)^2.
-# Se divide por n (no por n-k) en gamma(k), como hace acf(); asi la matriz de autocovarianzas es semidefinida positiva.
+# Se divide por n (no por n-k) en gamma(k), como hace la funcion acf de R; asi la matriz de autocovarianzas es semidefinida positiva.
 acf_muestral <- function(y, m) {
   stopifnot(is.numeric(y), !anyNA(y), length(y) > 2, is.numeric(m), length(m) == 1, m >= 1, m < length(y))
   n <- length(y)
@@ -90,17 +90,17 @@ ljung_box <- function(y, m, que = "la serie", alpha = 0.05) {
   crit <- stats::qchisq(1 - alpha, m)
   nueva_prueba(
     nombre = paste0("Prueba de Ljung-Box sobre ", que, " (m = ", m, ")"),
-    h0 = "rho_1 = ... = rho_m = 0 (no hay autocorrelacion hasta el rezago m)",
-    h1 = "algun rho_k distinto de 0 con k <= m",
+    h0 = "$\\rho_1 = \\dots = \\rho_m = 0$ (no hay autocorrelación hasta el rezago $m$)",
+    h1 = "algún $\\rho_k \\neq 0$ con $k \\leq m$",
     estadistico = "Q",
-    formula = "n(n+2) * sum_{k=1}^{m} r_k^2/(n-k)",
-    distribucion = paste0("chi-cuadrado con ", m, " grados de libertad"),
-    region = paste0("Q > ", formatear_num(crit)),
+    formula = "n(n+2)\\sum_{k=1}^{m} \\frac{r_k^2}{n-k}",
+    distribucion = paste0("$\\chi^2$ con ", m, " grados de libertad"),
+    region = paste0("$Q > ", formatear_num(crit), "$"),
     valor_critico = crit,
     observado = Q,
     valor_p = stats::pchisq(Q, m, lower.tail = FALSE),
-    lectura_rechaza = paste0("Hay autocorrelacion en ", que, " hasta el rezago ", m, ": no se comporta como ruido blanco."),
-    lectura_no_rechaza = paste0("No hay evidencia de autocorrelacion en ", que, " hasta el rezago ", m, ": es compatible con ruido blanco."),
+    lectura_rechaza = paste0("Hay autocorrelación en ", que, " hasta el rezago ", m, ": no se comporta como ruido blanco."),
+    lectura_no_rechaza = paste0("No hay evidencia de autocorrelación en ", que, " hasta el rezago ", m, ": es compatible con ruido blanco."),
     alpha = alpha
   )
 }

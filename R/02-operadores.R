@@ -51,16 +51,36 @@ polinomio_rezago <- function(coef) {
 evaluar_candidatas <- function(y, candidatas) {
   stopifnot(is.numeric(y), !anyNA(y), is.list(candidatas))
   filas <- lapply(candidatas, function(cd) {
-    z <- y
-    if (isTRUE(cd$log)) {
-      if (any(y <= 0)) stop("log requiere y > 0.")
-      z <- log(y)
-    }
-    z <- diferenciar(z, cd$d, cd$D, cd$s)
+    z <- aplicar_candidata(y, cd)
     tibble::tibble(candidata = cd$nombre, n = length(z), media = mean(z),
                    varianza = stats::var(z), r1 = acf_muestral(z, 1))
   })
   dplyr::bind_rows(filas)
+}
+
+# Aplica una candidata list(nombre, log, d, D, s, tend) a y: primero logaritmo (si log), luego se quita
+# una tendencia polinomial de grado `tend` (si no es NULL), luego las diferencias. Una sola definicion
+# para que la tabla de la seccion 4 y el analisis de la seccion 5 usen exactamente la misma transformacion.
+aplicar_candidata <- function(y, cd) {
+  z <- y
+  if (isTRUE(cd$log)) {
+    if (any(y <= 0)) stop("log requiere y > 0.")
+    z <- log(y)
+  }
+  if (!is.null(cd$tend)) z <- residuos_tendencia(z, cd$tend)$residuos
+  diferenciar(z, cd$d, cd$D, cd$s)
+}
+
+# Residuos de ajustar por minimos cuadrados una tendencia polinomial de grado `grado` en t = 1..n.
+# Se resuelven las ecuaciones normales (X'X) b = X'y; sin lm(). Con un intercepto en el modelo,
+# la media de los residuos es 0 por construccion (la tendencia absorbe el nivel).
+residuos_tendencia <- function(y, grado = 1) {
+  stopifnot(is.numeric(y), !anyNA(y), is.numeric(grado), length(grado) == 1, grado >= 0, grado == round(grado),
+            length(y) > grado + 1)
+  t <- seq_along(y)
+  X <- outer(t, 0:grado, "^")
+  b <- solve(crossprod(X), crossprod(X, y))
+  list(coeficientes = as.numeric(b), ajustado = as.numeric(X %*% b), residuos = as.numeric(y - X %*% b))
 }
 
 # Identidad Var(grad Y) = 2 gamma(0) - 2 gamma(1), con gamma muestrales (divisor n).

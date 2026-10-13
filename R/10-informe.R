@@ -15,6 +15,10 @@ tabla <- function(df, digits = 2, ...) {
   knitr::kable(df, digits = digits, format.args = list(decimal.mark = ","), row.names = FALSE, ...)
 }
 
+# Pesos colombianos: "450.000 COP" y millones "19,2 M COP".
+fcop <- function(x) paste0(format(round(x), big.mark = ".", decimal.mark = ",", scientific = FALSE, trim = TRUE), " COP")
+fmm <- function(x, d = 1) paste0(fnum(x / 1e6, d), " M COP")
+
 # Fecha en formato AAAA-MM-DD.
 ffecha <- function(x) format(x, "%Y-%m-%d")
 
@@ -28,6 +32,28 @@ texto_polinomio <- function(coef) {
     out <- paste0(out, if (coef[k] < 0) " - " else " + ", if (a == 1) "" else format(a), mono)
   }
   paste0("$", out, "$")
+}
+
+# Texto de parametros para el informe: letras griegas y coma decimal ("alpha = 0.5" -> "α = 0,5").
+bonito <- function(x) {
+  x <- gsub("alpha", "α", x, fixed = TRUE)
+  x <- gsub("beta", "β", x, fixed = TRUE)
+  x <- gsub("gamma", "γ", x, fixed = TRUE)
+  gsub("([0-9])\\.([0-9])", "\\1,\\2", x)
+}
+
+# Marca los parametros elegidos que quedan en un limite de la rejilla (lectura de diagnostico de las notas:
+# un valor pegado al borde sugiere que la familia del metodo no es la adecuada o que la rejilla es corta).
+en_borde <- function(opt) {
+  if (is.null(opt)) return("")
+  pars <- names(opt$curva)[names(opt$curva) != "mse"]
+  marcas <- vapply(pars, function(p) {
+    v <- opt$mejor[[p]]
+    rng <- range(opt$curva[[p]])
+    nombre <- bonito(p)
+    if (isTRUE(all.equal(v, rng[1]))) paste0(nombre, ": límite inferior") else if (isTRUE(all.equal(v, rng[2]))) paste0(nombre, ": límite superior") else ""
+  }, character(1))
+  paste(marcas[marcas != ""], collapse = "; ")
 }
 
 # Nombres abreviados de los meses (la serie 1 empieza en enero, la serie 3 en marzo).

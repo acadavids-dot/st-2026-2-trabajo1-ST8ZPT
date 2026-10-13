@@ -50,14 +50,14 @@ guardar(grafico_descomposicion(datos[[1]], descomposicion_clasica(datos[[1]]$val
         "serie1-descomposicion.png", h = 7)
 
 # --- Seccion 4: operador de rezago, candidatas y raices ---
-cand <- function(nombre, log = FALSE, d = 0, D = 0, s = 1) list(nombre = nombre, log = log, d = d, D = D, s = s)
+cand <- function(nombre, log = FALSE, d = 0, D = 0, s = 1, tend = NULL) list(nombre = nombre, log = log, d = d, D = D, s = s, tend = tend)
 candidatas <- list(
   list(cand("Y"), cand("log Y", log = TRUE), cand("(1-B) log Y", TRUE, 1), cand("(1-B^12) log Y", TRUE, 0, 1, 12),
        cand("(1-B)(1-B^12) log Y", TRUE, 1, 1, 12), cand("(1-B)(1-B^12) Y", FALSE, 1, 1, 12)),
   list(cand("Y"), cand("(1-B) Y", FALSE, 1), cand("(1-B)^2 Y", FALSE, 2), cand("(1-B^7) Y", FALSE, 0, 1, 7),
        cand("(1-B) log Y", TRUE, 1)),
   list(cand("Y"), cand("(1-B) Y", FALSE, 1), cand("(1-B)^2 Y", FALSE, 2), cand("(1-B^6) Y", FALSE, 0, 1, 6),
-       cand("(1-B^12) Y", FALSE, 0, 1, 12), cand("log Y", TRUE))
+       cand("(1-B^12) Y", FALSE, 0, 1, 12), cand("log Y", TRUE), cand("Y - tendencia lineal", tend = 1))
 )
 tabla_cand <- lapply(seq_along(series), function(i) evaluar_candidatas(datos[[i]]$valor, candidatas[[i]]))
 for (i in seq_along(series)) { cat("\nSerie", i, "- candidatas\n"); print(as.data.frame(tabla_cand[[i]])) }
@@ -78,4 +78,35 @@ for (i in seq_along(series)) {
   }, character(1))
   rs <- setNames(lapply(ps, function(p) polinomio_rezago(coef_diferencia(p[1], p[2], p[3]))), nombres)
   guardar(grafico_raices(rs), sprintf("serie%d-raices.png", i), h = 5)
+}
+
+# --- Seccion 5: dependencia sobre la serie transformada ELEGIDA ---
+# Elegidas: S1 = (1-B)(1-B^12) log Y; S2 = (1-B) Y; S3 = Y - tendencia lineal (MCO).
+elegida <- list(
+  cand("(1-B)(1-B^12) log Y", TRUE, 1, 1, 12),
+  cand("(1-B) Y", FALSE, 1),
+  cand("Y - tendencia lineal", tend = 1)
+)
+m5 <- 24  # m para Ljung-Box y correlogramas de la serie transformada (ver justificacion en el informe)
+dep <- list()
+for (i in seq_along(series)) {
+  z <- aplicar_candidata(datos[[i]]$valor, elegida[[i]])
+  n <- length(z)
+  r <- acf_muestral(z, m5)
+  phi <- pacf_dl(r)
+  bb <- banda_bartlett(r, n)
+  guardar(correlograma(r, n, paste0("ACF de la serie ", i, " transformada: ", elegida[[i]]$nombre), bartlett = bb),
+          sprintf("serie%d-acf-transformada.png", i))
+  guardar(correlograma(phi, n, paste0("PACF de la serie ", i, " transformada: ", elegida[[i]]$nombre), "Autocorrelacion parcial"),
+          sprintf("serie%d-pacf-transformada.png", i))
+  dep[[i]] <- list(z = z, n = n, r = r, phi = phi, bartlett = bb,
+                   lb = ljung_box(z, m5, paste0("la serie ", i, " transformada")),
+                   bloques = bloques_media_var(z, 4), ic = ic_media(z))
+  cat("\n=== Serie", i, "transformada:", elegida[[i]]$nombre, "(n =", n, ") ===\n")
+  cat(imprimir_prueba(dep[[i]]$lb), sep = "\n")
+  print(as.data.frame(dep[[i]]$bloques))
+  print(as.data.frame(dep[[i]]$ic))
+  cat("Rezagos de la ACF fuera de la banda de ruido blanco:", which(abs(r) > 1.96 / sqrt(n)), "\n")
+  cat("Rezagos de la ACF fuera de la banda de Bartlett:", which(abs(r) > bb), "\n")
+  cat("Rezagos de la PACF fuera de la banda de ruido blanco:", which(abs(phi) > 1.96 / sqrt(n)), "\n")
 }

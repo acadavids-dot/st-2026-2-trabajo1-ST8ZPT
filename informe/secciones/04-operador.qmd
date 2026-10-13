@@ -1,0 +1,203 @@
+# Operador de rezago
+
+## Las funciones `diferenciar()` y `polinomio_rezago()`
+
+El operador de rezago $B$ cumple $B Y_t = Y_{t-1}$. `diferenciar(y, d, D, s)` aplica $(1-B)^d (1-B^s)^D$ restando la serie desplazada, sin usar `diff()`; cada resta de rezago $L$ pierde $L$ observaciones, de modo que el resultado tiene $n - d - D s$ valores. `polinomio_rezago(coef)` recibe los coeficientes de $c(B) = 1 + c_1 B + \dots + c_p B^p$ y devuelve sus raíces con su módulo, usando `polyroot()`; un módulo igual a 1 es una raíz unitaria. `coef_diferencia(d, D, s)` entrega los coeficientes del polinomio $(1-B)^d(1-B^s)^D$ por multiplicación de polinomios.
+
+```{r}
+#| label: ver-diferenciar
+# --- VERIFICACION: diferenciar() contra diff() ---
+combos <- list(c(1, 0, 1), c(2, 0, 1), c(0, 1, 12), c(1, 1, 12), c(0, 1, 7), c(1, 1, 7), c(0, 1, 6))
+dif_max <- vapply(1:3, function(i) {
+  max(vapply(combos, function(p) {
+    ref <- datos[[i]]$valor
+    if (p[2] > 0) ref <- diff(ref, lag = p[3])
+    if (p[1] > 0) ref <- diff(ref, differences = p[1])
+    max(abs(diferenciar(datos[[i]]$valor, p[1], p[2], p[3]) - ref))
+  }, numeric(1)))
+}, numeric(1))
+```
+
+Contra `diff()`, en `r length(combos)` combinaciones de $(d, D, s)$ sobre cada una de las tres series, la diferencia máxima absoluta es `r format(max(dif_max), digits = 3)`: las dos funciones coinciden. Un ejemplo de `polinomio_rezago()` con $1 - B^{12}$, que tiene doce raíces sobre la circunferencia unitaria, equiespaciadas cada 30 grados:
+
+```{r}
+#| label: tbl-raices-b12
+r12 <- polinomio_rezago(coef_diferencia(0, 1, 12))
+r12$`Ángulo (grados)` <- round(atan2(r12$im, r12$re) * 180 / pi) %% 360
+r12 <- r12[order(r12$`Ángulo (grados)`), ]
+names(r12)[1:3] <- c("Parte real", "Parte imaginaria", "Módulo")
+tabla(r12, digits = 4)
+```
+
+## Transformaciones candidatas
+
+Cada candidata es un polinomio en $B$ aplicado a la serie, posiblemente precedido de una transformación de escala (logaritmo). La tabla de abajo lista los polinomios de diferencia de todas las candidatas; cada raíz está en el plano complejo sobre la circunferencia unitaria (módulo 1).
+
+```{r}
+#| label: tbl-factores
+fact <- data.frame(
+  Factor = c("$1-B$", "$(1-B)^2$", "$1-B^{6}$", "$1-B^{7}$", "$1-B^{12}$", "$(1-B)(1-B^{12})$"),
+  Polinomio = c(texto_polinomio(coef_diferencia(1, 0, 1)), texto_polinomio(coef_diferencia(2, 0, 1)),
+                texto_polinomio(coef_diferencia(0, 1, 6)), texto_polinomio(coef_diferencia(0, 1, 7)),
+                texto_polinomio(coef_diferencia(0, 1, 12)), texto_polinomio(coef_diferencia(1, 1, 12))),
+  `Raíces` = c("$B=1$", "$B=1$ (doble)", "seis raíces sextas de la unidad", "siete raíces séptimas de la unidad",
+               "doce raíces doceavas de la unidad", "$B=1$ (doble) y las otras once raíces doceavas"),
+  `Componente determinista que elimina` = c(
+    "un nivel constante; una tendencia lineal queda como constante (la pendiente)",
+    "un nivel y una tendencia lineal; una tendencia cuadrática queda como constante",
+    "un patrón que se repite cada 6 períodos; una tendencia lineal queda como constante $6\\beta$",
+    "un patrón que se repite cada 7 períodos; una tendencia lineal queda como constante $7\\beta$",
+    "un patrón que se repite cada 12 períodos (índices estacionales fijos); una tendencia lineal queda como constante $12\\beta$",
+    "el patrón de 12 períodos y la tendencia lineal; el resultado tiene media cero si la tendencia es lineal"),
+  check.names = FALSE)
+tabla(fact)
+```
+
+```{r}
+#| label: fig-raices
+#| fig-height: 5
+rs <- function(d, D, s) polinomio_rezago(coef_diferencia(d, D, s))
+print(grafico_raices(list("(1-B)" = rs(1, 0, 1), "(1-B^12)" = rs(0, 1, 12), "(1-B)(1-B^12)" = rs(1, 1, 12))))
+```
+
+Las candidatas por serie son:
+
+- **Serie 1** (estacional multiplicativa, tendencia): $Y$; $\log Y$ (transformación previa de escala, que vuelve aditiva la estacionalidad multiplicativa); $\nabla\log Y$; $(1-B^{12})\log Y$; $\nabla(1-B^{12})\log Y$; y $\nabla(1-B^{12})Y$, sin logaritmo, como contraste de escala.
+- **Serie 2** (tendencia, sin estacionalidad): $Y$; $\nabla Y$; $\nabla^2 Y$ (contraste de sobrediferenciación); $(1-B^7)Y$ (contraste: elimina un patrón semanal que no existe); y $\nabla\log Y$ para ver si hace falta la escala logarítmica.
+- **Serie 3** (tendencia lineal, sin estacionalidad): $Y$; $\nabla Y$; $\nabla^2 Y$; $(1-B^6)Y$ y $(1-B^{12})Y$; $\log Y$; y $Y - \hat\beta_0 - \hat\beta_1 t$, que no es un polinomio en $B$ sino la proyección sobre una recta por mínimos cuadrados (`residuos_tendencia()`) y que elimina exactamente la tendencia lineal determinista dejando media cero.
+
+## Elección con varianza, $r_1$ y la identidad de la varianza
+
+Para una serie estacionaria con autocovarianzas $\gamma(0)$ y $\gamma(1)$, $\mathrm{Var}(\nabla Y_t) = 2\gamma(0) - 2\gamma(1) = 2\gamma(0)(1-\rho_1)$. De ahí salen dos reglas: (i) diferenciar **reduce** la varianza solo si $\rho_1 > 1/2$; si la serie ya era estacionaria con $\rho_1 < 1/2$, diferenciar la **aumenta**; (ii) si la serie ya era ruido blanco ($\rho_1 = 0$), la serie diferenciada tiene $\mathrm{Var} = 2\gamma(0)$ y $r_1$ cercano a $-0{,}5$; ese valor es la huella de haber diferenciado de más.
+
+```{r}
+#| label: tab-cand
+tab4 <- lapply(1:3, function(i) evaluar_candidatas(datos[[i]]$valor, candidatas[[i]]))
+z_el <- lapply(1:3, function(i) aplicar_candidata(datos[[i]]$valor, elegida[[i]]))
+mostrar_tab <- function(i) {
+  t4 <- tab4[[i]]
+  tabla(data.frame(Candidata = t4$candidata, n = t4$n, Media = t4$media, Varianza = t4$varianza, r1 = t4$r1,
+                   Elegida = ifelse(t4$candidata == elegida[[i]]$nombre, "sí", ""), check.names = FALSE), digits = 4)
+}
+```
+
+### Serie 1
+
+```{r}
+#| label: tbl-cand1
+mostrar_tab(1)
+```
+
+```{r}
+#| label: id-s1
+Z1 <- diferenciar(log(datos[[1]]$valor), 0, 1, 12)
+id1 <- identidad_var_diferencia(Z1)
+r1_Z1 <- acf_muestral(Z1, 1)
+bl <- function(z) { b <- bloques_media_var(z, 4)$varianza; max(b) / min(b) }
+razon_log <- bl(z_el[[1]])
+razon_nolog <- bl(diferenciar(datos[[1]]$valor, 1, 1, 12))
+```
+
+$Y$ y $\log Y$ tienen $r_1$ de `r fnum(tab4[[1]]$r1[1], 3)` y `r fnum(tab4[[1]]$r1[2], 3)` pero con estacionalidad y tendencia que la ACF mostró (sección 3). $\nabla\log Y$ quita la tendencia pero deja la estacionalidad entera: su $r_1$ es solo `r fnum(tab4[[1]]$r1[3], 3)` y la ACF tiene un pico de `r fnum(acf_muestral(diferenciar(log(datos[[1]]$valor), 1, 0, 1), 12)[12], 2)` en el rezago 12, de modo que $r_1$ engaña: una serie con estacionalidad fuerte puede tener $r_1$ bajo. $(1-B^{12})\log Y$ quita la estacionalidad pero la tendencia sigue ahí ($r_1 =$ `r fnum(tab4[[1]]$r1[4], 3)`). La combinación $\nabla(1-B^{12})\log Y$ reduce la varianza a `r fnum(tab4[[1]]$varianza[5], 5)` desde `r fnum(tab4[[1]]$varianza[4], 5)`, una baja de `r fpct(1 - tab4[[1]]$varianza[5] / tab4[[1]]$varianza[4], 0)`.
+
+Esa baja es lo que descarta la sobrediferenciación aquí: diferenciar una serie ya estacionaria **sube** la varianza, y la identidad lo confirma. Con $Z = (1-B^{12})\log Y$, $\mathrm{Var}(\nabla Z) =$ `r fnum(id1$var_diferencia, 5)` frente a $2\hat\gamma(0) - 2\hat\gamma(1) =$ `r fnum(id1$dos_g0_menos_dos_g1, 5)`, y $r_1(Z) =$ `r fnum(r1_Z1, 2)` es mayor que $1/2$, de modo que $\nabla$ debía reducir la varianza. El $r_1$ de la serie elegida es `r fnum(tab4[[1]]$r1[5], 3)`, lejos de $-0{,}5$ y compatible con un término de media móvil, que se discute en la sección 5. El logaritmo se justifica sobre todo por la sección 3: la amplitud estacional crece con el nivel (correlación `r fnum(ev$cor_amplitud_nivel[1], 3)`) y la descomposición multiplicativa deja un residuo relativo `r fnum(ev$cv_residuo_aditiva[1] / ev$cv_residuo_multiplicativa[1], 1)` veces menor. Sobre la serie ya diferenciada el efecto es modesto pero va en el mismo sentido: el cociente entre la mayor y la menor varianza de cuatro bloques consecutivos es `r fnum(razon_log, 1)` con el logaritmo y `r fnum(razon_nolog, 1)` sin él. **Elegida: $\nabla(1-B^{12})\log Y$**, con polinomio `r texto_polinomio(coef_diferencia(1, 1, 12))`.
+
+### Serie 2
+
+```{r}
+#| label: tbl-cand2
+mostrar_tab(2)
+```
+
+```{r}
+#| label: id-s2
+Z2 <- datos[[2]]$valor
+id2a <- identidad_var_diferencia(Z2)
+id2b <- identidad_var_diferencia(diferenciar(Z2, 1, 0, 1))
+```
+
+$Y$ no es estacionaria: $r_1 =$ `r fnum(tab4[[2]]$r1[1], 3)` y varianza `r fnum(tab4[[2]]$varianza[1], 1)`. Una diferencia deja $r_1 =$ `r fnum(tab4[[2]]$r1[2], 3)` y varianza `r fnum(tab4[[2]]$varianza[2], 1)`. Una segunda diferencia la **sube** a `r fnum(tab4[[2]]$varianza[3], 1)` y lleva $r_1$ a `r fnum(tab4[[2]]$r1[3], 3)`, como anuncia la identidad: con $Z = \nabla Y$, $2\hat\gamma(0) - 2\hat\gamma(1) =$ `r fnum(id2b$dos_g0_menos_dos_g1, 1)`, muy cerca de la varianza observada de $\nabla^2 Y$ (`r fnum(id2b$var_diferencia, 1)`). Como $\hat\rho_1(Z) =$ `r fnum(tab4[[2]]$r1[2], 2)` es menor que $1/2$, diferenciar otra vez solo agrega varianza. La diferencia estacional $(1-B^7)Y$ deja $r_1 =$ `r fnum(tab4[[2]]$r1[4], 3)`, peor que $\nabla Y$, coherente con que no hay estacionalidad semanal. Tomar logaritmo no cambia nada ($r_1 =$ `r fnum(tab4[[2]]$r1[5], 3)` para $\nabla\log Y$). **Elegida: $\nabla Y$**, con polinomio `r texto_polinomio(coef_diferencia(1, 0, 1))`.
+
+### Serie 3
+
+```{r}
+#| label: tbl-cand3
+mostrar_tab(3)
+```
+
+```{r}
+#| label: id-s3
+z3 <- z_el[[3]]
+dz3 <- diferenciar(z3, 1, 0, 1)
+id3 <- identidad_var_diferencia(z3)
+```
+
+$\nabla Y$ reduce la varianza de `r fnum(tab4[[3]]$varianza[1], 1)` a `r fnum(tab4[[3]]$varianza[2], 1)` y parece una elección natural, pero su $r_1$ es `r fnum(tab4[[3]]$r1[2], 3)`, casi exactamente el $-0{,}5$ de una serie que ya era ruido blanco. Eso es lo que ocurre si $Y_t = \beta_0 + \beta_1 t + \varepsilon_t$ con $\varepsilon_t$ ruido blanco: $\nabla Y_t = \beta_1 + \varepsilon_t - \varepsilon_{t-1}$, cuya varianza es $2\sigma^2$ y cuya autocorrelación en el rezago 1 es $-1/2$. Los datos lo confirman: la varianza de los residuos de la recta es `r fnum(var(z3), 1)`, su doble es `r fnum(2 * var(z3), 1)`, y la varianza de $\nabla Y$ es `r fnum(tab4[[3]]$varianza[2], 1)`. Una segunda diferencia empeora ($r_1 =$ `r fnum(tab4[[3]]$r1[3], 3)`, varianza `r fnum(tab4[[3]]$varianza[3], 1)`). Las diferencias estacionales dejan $r_1 \approx 0$ pero con varianza de `r fnum(tab4[[3]]$varianza[4], 1)` y `r fnum(tab4[[3]]$varianza[5], 1)`, aproximadamente el doble que la de los residuos de la recta, otra vez porque difieren de más. Los residuos de la tendencia lineal tienen $r_1 =$ `r fnum(tab4[[3]]$r1[7], 3)` y varianza `r fnum(tab4[[3]]$varianza[7], 1)`, la menor entre las candidatas en la escala original. **Elegida: $Y$ menos su tendencia lineal ajustada por mínimos cuadrados** (`residuos_tendencia(y, 1)`); la serie es estacionaria alrededor de una recta determinista, y diferenciar sería sobrediferenciar.
+
+### La media de la serie transformada
+
+La media de la serie transformada debe ser lo que la transformación deja. En la serie 1, con una tendencia lineal en logaritmos y un patrón estacional fijo, $\nabla(1-B^{12})$ elimina ambos y la media debe ser 0. En la serie 2, la suma de $\nabla Y_t$ se telescopa: su media es exactamente $(Y_T - Y_1)/(T-1)$, la pendiente promedio. En la serie 3, el intercepto de la regresión absorbe el nivel, de modo que los residuos tienen media 0 por construcción.
+
+```{r}
+#| label: tbl-media
+ic_el <- lapply(z_el, ic_media)
+esp <- c(0, (datos[[2]]$valor[180] - datos[[2]]$valor[1]) / 179, 0)
+tabla(data.frame(
+  Serie = 1:3,
+  Transformación = vapply(elegida, function(e) e$nombre, character(1)),
+  `Media observada` = vapply(ic_el, function(x) x$media, numeric(1)),
+  `Media esperada` = esp,
+  `Error estándar de largo plazo` = vapply(ic_el, function(x) x$se_largo_plazo, numeric(1)),
+  `|Diferencia| / EE` = abs(vapply(ic_el, function(x) x$media, numeric(1)) - esp) / vapply(ic_el, function(x) x$se_largo_plazo, numeric(1)),
+  check.names = FALSE), digits = 5)
+```
+
+En la serie 2 la media observada y la esperada coinciden hasta el redondeo (identidad exacta; diferencia `r format(abs(ic_el[[2]]$media - esp[2]), digits = 2, decimal.mark = ",")`). En la serie 1 la media observada está a `r fnum(abs(ic_el[[1]]$media) / ic_el[[1]]$se_largo_plazo, 2)` errores estándar de 0, compatible con 0. En la serie 3 la media es cero salvo el error de redondeo (`r format(abs(ic_el[[3]]$media), digits = 2, decimal.mark = ",")`).
+
+## Demostraciones a mano: la función de pronóstico de Holt y de Holt–Winters
+
+El operador $B$ actúa aquí sobre el horizonte $h$: $B f(h) = f(h-1)$.
+
+**Holt.** La función de pronóstico es $\hat Y_{T+h} = L_T + \hat T_T\,h$, $h \ge 1$, con $L_T$ y $\hat T_T$ fijos (determinados en $T$). Sea $f(h) = L_T + \hat T_T h$. Para $h \ge 2$, tanto $f(h)$ como $f(h-1)$ están definidas por la misma fórmula, y
+
+$$(1-B)f(h) = f(h) - f(h-1) = \hat T_T\,h - \hat T_T\,(h-1) = \hat T_T \qquad (h \ge 2).$$
+
+Como $(1-B)f$ es constante para $h \ge 2$, para $h \ge 3$ también están definidos $(1-B)f(h)$ y $(1-B)f(h-1)$, y
+
+$$(1-B)^2 f(h) = (1-B)f(h) - (1-B)f(h-1) = \hat T_T - \hat T_T = 0 \qquad (h \ge 3). \;\blacksquare$$
+
+La ecuación en diferencias $(1-B)^2 f(h) = 0$ tiene polinomio característico $(1-z)^2$, con la raíz $z = 1$ de multiplicidad 2. Su solución general es $f(h) = c_0 + c_1 h$, y aquí $c_0 = L_T$, $c_1 = \hat T_T$. Las dos raíces unitarias son componentes de **tendencia**: la primera (constante) es el nivel y la segunda (el factor $h$ que aparece por la multiplicidad) es la pendiente. No hay raíces que correspondan a estacionalidad.
+
+**Holt–Winters aditivo con período $s$.** La función de pronóstico es
+
+$$\hat Y_{T+h} = L_T + \hat T_T\,h + S_{T+h-s\lceil h/s\rceil}, \qquad h \ge 1.$$
+
+Sea $g(h) = S_{T+h-s\lceil h/s\rceil}$ el componente estacional. Como $\lceil (h+s)/s \rceil = \lceil h/s \rceil + 1$, se tiene $(h+s) - s\lceil (h+s)/s \rceil = h - s\lceil h/s\rceil$ y por tanto $g(h+s) = g(h)$: $g$ es periódica de período $s$, es decir $(1-B^s)g(h) = g(h) - g(h-s) = 0$ para $h \ge s+1$. Aplicando $(1-B^s)$ a $f(h) = L_T + \hat T_T h + g(h)$ para $h \ge s+1$,
+
+$$(1-B^s)f(h) = \hat T_T\,[h - (h-s)] + [g(h) - g(h-s)] = s\,\hat T_T,$$
+
+una constante. Para $h \ge s+2$ están definidos $(1-B^s)f(h)$ y $(1-B^s)f(h-1)$, y como los operadores conmutan,
+
+$$(1-B)(1-B^s)f(h) = s\,\hat T_T - s\,\hat T_T = 0 \qquad (h \ge s+2). \;\blacksquare$$
+
+El polinomio característico es $(1-z)(1-z^s) = (1-z)^2(1 + z + \dots + z^{s-1})$. Sus raíces son: $z = 1$ con multiplicidad 2, que dan $a + b\,h$ (**tendencia**: nivel y pendiente), y las $s-1$ raíces de $1 + z + \dots + z^{s-1}$, que son las raíces $s$-ésimas de la unidad distintas de 1, $z_k = e^{2\pi i k/s}$, $k = 1,\dots,s-1$ (**estacionalidad**). La solución general es
+
+$$f(h) = a + b\,h + \sum_{k=1}^{s-1} c_k\,e^{2\pi i k h/s},$$
+
+que en forma real es una suma de pares $\alpha_k\cos(2\pi k h/s) + \beta_k\sin(2\pi k h/s)$ y, si $s$ es par, un término $(-1)^h$ (raíz $z=-1$). Tiene $2 + (s-1) = s+1$ constantes libres; $L_T$, $\hat T_T$ y los $s$ índices $S$ son $s+2$ parámetros, y la diferencia de uno es la constante que no se puede separar entre $L_T$ y los índices (por eso los índices se normalizan a suma cero).
+
+**Comprobación numérica con los métodos del repositorio.** Se aplica `diferenciar()` a la función de pronóstico de Holt ajustado a la serie 2 y a la de Holt–Winters aditivo ajustado a la serie 1, con las constantes elegidas por MSE (sección 6):
+
+```{r}
+#| label: ver-demostraciones
+ajh <- res[[2]]$ajustes[["holt"]]
+fh <- ajustar_holt(datos[[2]]$valor, ajh$parametros$alpha, ajh$parametros$beta)
+pron_holt <- fh$pronosticar(40)
+op_holt <- diferenciar(pron_holt, 2, 0, 1)      # (1-B)^2 aplicado sobre h = 3, ..., 40
+ahw <- res[[1]]$ajustes[["hw"]]
+fhw <- ajustar_hw(datos[[1]]$valor, 12, ahw$parametros$alpha, ahw$parametros$beta, ahw$parametros$gamma)
+pron_hw <- fhw$pronosticar(60)
+op_hw <- diferenciar(pron_hw, 1, 1, 12)         # (1-B)(1-B^12) aplicado sobre h = 14, ..., 60
+```
+
+Para Holt (con $\alpha =$ `r fnum(ajh$parametros$alpha, 2)`, $\beta =$ `r fnum(ajh$parametros$beta, 2)`), $(1-B)^2\hat Y_{T+h}$ vale en valor absoluto como máximo `r format(max(abs(op_holt)), digits = 2, decimal.mark = ",")` para $h = 3,\dots,40$. Para Holt–Winters aditivo (con $\alpha =$ `r fnum(ahw$parametros$alpha, 1)`, $\beta =$ `r fnum(ahw$parametros$beta, 1)`, $\gamma =$ `r fnum(ahw$parametros$gamma, 1)`, $s = 12$), $(1-B)(1-B^{12})\hat Y_{T+h}$ vale como máximo `r format(max(abs(op_hw)), digits = 2, decimal.mark = ",")` para $h = 14,\dots,60$, es decir, $h \ge s+2$. Ambas cifras son cero salvo el error de punto flotante, como las demostraciones indican.

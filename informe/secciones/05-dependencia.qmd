@@ -1,0 +1,137 @@
+# Dependencia y estacionariedad
+
+Todo el análisis de esta sección se hace sobre la **serie transformada elegida en la sección 4**: $\nabla(1-B^{12})\log Y$ en la serie 1, $\nabla Y$ en la serie 2 y $Y$ menos su tendencia lineal en la serie 3.
+
+```{r}
+#| label: dep-calculo
+m5 <- 24
+dep <- lapply(1:3, function(i) {
+  z <- z_el[[i]]
+  n <- length(z)
+  r <- acf_muestral(z, m5)
+  list(z = z, n = n, r = r, phi = pacf_dl(r), bart = banda_bartlett(r, n),
+       lb = ljung_box(z, m5, paste0("la serie ", i, " transformada")),
+       bloques = bloques_media_var(z, 4), ic = ic_media(z),
+       fuera_rb = which(abs(r) > 1.96 / sqrt(n)), fuera_bart = which(abs(r) > banda_bartlett(r, n)),
+       fuera_pacf = which(abs(pacf_dl(r)) > 1.96 / sqrt(n)))
+})
+```
+
+## ACF y PACF: `pacf_dl()` y las dos bandas
+
+`pacf_dl(r)` calcula la autocorrelación parcial muestral con la recursión de Durbin y Levinson a partir de $r_1,\dots,r_m$: $\hat\phi_{kk} = \big(r_k - \sum_{j<k}\hat\phi_{k-1,j}\,r_{k-j}\big)\big/\big(1 - \sum_{j<k}\hat\phi_{k-1,j}\,r_j\big)$, con $\hat\phi_{kj} = \hat\phi_{k-1,j} - \hat\phi_{kk}\hat\phi_{k-1,k-j}$ para actualizar los demás coeficientes.
+
+```{r}
+#| label: ver-pacf
+# --- VERIFICACION: pacf_dl() contra pacf() ---
+dif_pacf <- vapply(1:3, function(i) {
+  max(abs(dep[[i]]$phi - as.numeric(pacf(dep[[i]]$z, lag.max = m5, plot = FALSE)$acf)))
+}, numeric(1))
+```
+
+Contra `pacf()`, sobre las tres series transformadas y con $m = `r m5`$, la máxima diferencia absoluta es `r format(max(dif_pacf), digits = 2, decimal.mark = ",")`, muy por debajo del umbral de $10^{-10}$ del enunciado.
+
+**Las dos bandas responden preguntas distintas.** La banda de ruido blanco, $\pm 1{,}96/\sqrt{n}$, responde: *¿es esta serie ruido blanco?* Es válida bajo la hipótesis de que **toda** la serie es ruido blanco, y es la que se usa para la PACF (fuera de $p$ rezagos, la PACF de un AR($p$) vale aproximadamente $N(0, 1/n)$). La banda de Bartlett, $\pm 1{,}96\sqrt{(1 + 2\sum_{i<h} r_i^2)/n}$, responde otra pregunta: *¿puede el rezago $h$ ser el primero en que la ACF se anula, sabiendo que los $h-1$ anteriores son reales?* Es válida si el proceso es una media móvil de orden $h-1$, y por eso es más ancha que la de ruido blanco cuanto más grandes son los rezagos anteriores: sirve para ubicar el orden $q$ de un MA($q$).
+
+```{r}
+#| label: fig-dep-s1
+#| fig-height: 3.4
+print(correlograma(dep[[1]]$r, dep[[1]]$n, "Serie 1: ACF de ∇(1-B^12) log Y", bartlett = dep[[1]]$bart))
+print(correlograma(dep[[1]]$phi, dep[[1]]$n, "Serie 1: PACF de ∇(1-B^12) log Y", "Autocorrelación parcial"))
+```
+
+```{r}
+#| label: fig-dep-s2
+#| fig-height: 3.4
+print(correlograma(dep[[2]]$r, dep[[2]]$n, "Serie 2: ACF de ∇Y", bartlett = dep[[2]]$bart))
+print(correlograma(dep[[2]]$phi, dep[[2]]$n, "Serie 2: PACF de ∇Y", "Autocorrelación parcial"))
+```
+
+```{r}
+#| label: fig-dep-s3
+#| fig-height: 3.4
+print(correlograma(dep[[3]]$r, dep[[3]]$n, "Serie 3: ACF de Y menos su tendencia lineal", bartlett = dep[[3]]$bart))
+print(correlograma(dep[[3]]$phi, dep[[3]]$n, "Serie 3: PACF de Y menos su tendencia lineal", "Autocorrelación parcial"))
+```
+
+## Prueba de Ljung–Box y forma de la ACF y la PACF
+
+Se usa $m = `r m5`$ rezagos, que es el $m = \min\{\lfloor T/4\rfloor, 24\}$ del enunciado; con ese valor hay al menos `r fnum(min(vapply(dep, function(d) d$n, numeric(1))) / m5, 1)` observaciones por rezago en las tres series, y en la serie 1 cubre dos ciclos estacionales completos (rezagos 12 y 24). Como se prueba sobre la serie transformada y no sobre residuos de un modelo ajustado, no se estimó ningún parámetro y la referencia es $\chi^2_m$; incluso en la serie 3, cuya transformación es una regresión con regresores deterministas, los coeficientes no restan grados de libertad.
+
+```{r}
+#| label: lb-s1
+#| results: asis
+cat(imprimir_prueba(dep[[1]]$lb), sep = "\n")
+```
+
+```{r}
+#| label: lb-s2
+#| results: asis
+cat(imprimir_prueba(dep[[2]]$lb), sep = "\n")
+```
+
+```{r}
+#| label: lb-s3
+#| results: asis
+cat(imprimir_prueba(dep[[3]]$lb), sep = "\n")
+```
+
+**Serie 1.** La ACF sale de la banda de ruido blanco en los rezagos `r paste(dep[[1]]$fuera_rb, collapse = ", ")` y de la de Bartlett en `r paste(dep[[1]]$fuera_bart, collapse = ", ")`: $r_1 =$ `r fnum(dep[[1]]$r[1])`, $r_{11} =$ `r fnum(dep[[1]]$r[11])`, $r_{12} =$ `r fnum(dep[[1]]$r[12])`, y se anula después. Es la forma de una media móvil que combina un término regular (rezago 1) con uno estacional (rezagos 11, 12 y 13), el esquema típico de una serie diferenciada regular y estacionalmente. La PACF, en cambio, no se corta: sale de la banda en los rezagos `r paste(dep[[1]]$fuera_pacf, collapse = ", ")`. *Compatible con:* una media móvil regular y estacional, MA(1) $\times$ MA(1)$_{12}$; que la ACF se corte y la PACF decaiga es la firma de un MA. *Incompatible con:* ruido blanco (Ljung–Box rechaza con $p$ `r fp(dep[[1]]$lb$valor_p)`) y con un AR puro (la PACF no se anula a partir de ningún rezago).
+
+**Serie 2.** Solo el rezago 1 de la ACF sale de ambas bandas ($r_1 =$ `r fnum(dep[[2]]$r[1])`); la PACF sale en los rezagos `r paste(dep[[2]]$fuera_pacf, collapse = ", ")` ($\hat\phi_{11} =$ `r fnum(dep[[2]]$phi[1])`, $\hat\phi_{22} =$ `r fnum(dep[[2]]$phi[2])`). Ljung–Box no rechaza ($p =$ `r fp(dep[[2]]$lb$valor_p)`). *Compatible con:* un MA(1) con coeficiente negativo (la ACF se corta en 1 y la PACF decae suavemente), y no se puede descartar ruido blanco con una autocorrelación pequeña en el rezago 1, porque el estadístico conjunto no rechaza. *Incompatible con:* un AR de orden alto o un proceso con estacionalidad semanal (los rezagos 7, 14 y 21 de la ACF están dentro de la banda).
+
+**Serie 3.** Ljung–Box no rechaza ($p =$ `r fp(dep[[3]]$lb$valor_p)`); la ACF tiene un solo rezago fuera de banda, el `r paste(dep[[3]]$fuera_rb, collapse = ", ")` ($r_{16} =$ `r fnum(dep[[3]]$r[16])`), y la PACF dos, `r paste(dep[[3]]$fuera_pacf, collapse = " y ")`; con 24 rezagos y un nivel de 5 % se esperan `r fnum(0.05 * m5, 1)` rezagos fuera de banda por azar, de modo que esos no revelan estructura. *Compatible con:* **ruido blanco**, lo que significa que la recta determinista recoge toda la dependencia de la serie. *Incompatible con:* cualquier AR o MA de orden bajo (no hay una forma de corte ni de decaimiento).
+
+## Estacionariedad en media y varianza, y ergodicidad
+
+Se divide cada serie transformada en cuatro bloques consecutivos de tamaño (casi) igual y se compara la media y la varianza de cada uno.
+
+```{r}
+#| label: tbl-bloques
+tb <- dplyr::bind_rows(lapply(1:3, function(i) dplyr::mutate(dep[[i]]$bloques, Serie = i, .before = 1)))
+tabla(data.frame(Serie = tb$Serie, Bloque = tb$bloque, n = tb$n, Media = tb$media, Varianza = tb$varianza), digits = 5)
+```
+
+```{r}
+#| label: dat-bloques
+rv <- vapply(dep, function(d) max(d$bloques$varianza) / min(d$bloques$varianza), numeric(1))
+rango_med <- vapply(dep, function(d) (max(d$bloques$media) - min(d$bloques$media)) / sd(d$z), numeric(1))
+# Referencia de azar: ruido blanco normal del mismo largo (4000 simulaciones, semilla fija).
+set.seed(1)
+azar <- lapply(1:3, function(i) {
+  sim <- replicate(4000, {
+    e <- rnorm(dep[[i]]$n)
+    b <- bloques_media_var(e, 4)
+    c(max(b$varianza) / min(b$varianza), (max(b$media) - min(b$media)) / sd(e))
+  })
+  list(q95_var = unname(quantile(sim[1, ], 0.95)), q95_med = unname(quantile(sim[2, ], 0.95)),
+       p_var = mean(sim[1, ] >= rv[i]), p_med = mean(sim[2, ] >= rango_med[i]))
+})
+```
+
+Con bloques de unas pocas decenas de observaciones, las medias y varianzas varían por azar aunque la serie sea estacionaria, así que la comparación se calibra contra una referencia: se simulan 4000 series de ruido blanco normal del mismo largo y se mira cuánto valen, por azar, la razón entre la mayor y la menor varianza de bloque y el rango de las medias de bloque (medido en desviaciones estándar de la serie). Si lo observado es menor que el percentil 95 de esa referencia, los bloques no dan evidencia de cambio.
+
+| Serie | Razón de varianzas observada | Percentil 95 por azar | $P(\text{azar} \geq \text{observada})$ | Rango de medias (en d.e.) | Percentil 95 por azar | $P(\text{azar} \geq \text{observado})$ |
+|:--|--:|--:|--:|--:|--:|--:|
+| 1 | `r fnum(rv[1], 2)` | `r fnum(azar[[1]]$q95_var, 2)` | `r fnum(azar[[1]]$p_var, 2)` | `r fnum(rango_med[1], 2)` | `r fnum(azar[[1]]$q95_med, 2)` | `r fnum(azar[[1]]$p_med, 2)` |
+| 2 | `r fnum(rv[2], 2)` | `r fnum(azar[[2]]$q95_var, 2)` | `r fnum(azar[[2]]$p_var, 2)` | `r fnum(rango_med[2], 2)` | `r fnum(azar[[2]]$q95_med, 2)` | `r fnum(azar[[2]]$p_med, 2)` |
+| 3 | `r fnum(rv[3], 2)` | `r fnum(azar[[3]]$q95_var, 2)` | `r fnum(azar[[3]]$p_var, 2)` | `r fnum(rango_med[3], 2)` | `r fnum(azar[[3]]$q95_med, 2)` | `r fnum(azar[[3]]$p_med, 2)` |
+
+En las **tres series** lo observado queda por debajo del percentil 95 de la referencia, tanto en varianza como en media: los bloques no dan evidencia de que cambien la media ni la varianza, y las tres series transformadas son plausiblemente estacionarias en media y en varianza. Hay dos matices que se dicen con sus cifras. En la serie 2 las medias de bloque de $\nabla Y$ valen `r fnum(dep[[2]]$bloques$media[1], 2)`, `r fnum(dep[[2]]$bloques$media[2], 2)`, `r fnum(dep[[2]]$bloques$media[3], 2)` y `r fnum(dep[[2]]$bloques$media[4], 2)` habitaciones por día, lo que coincide con la forma que se ve en el gráfico (sube con fuerza al comienzo y luego se estabiliza), pero esa variación es compatible con el azar y no basta para decir que la deriva cambió. En la serie 3 la varianza de bloque pasa de `r fnum(dep[[3]]$bloques$varianza[1], 1)` a `r fnum(dep[[3]]$bloques$varianza[4], 1)` entre el primer y el último bloque, una razón de `r fnum(rv[3], 2)` que tampoco supera lo que produce el azar (`r fnum(azar[[3]]$q95_var, 2)` en el percentil 95), de modo que no hay evidencia de heterocedasticidad con estos datos. La **ergodicidad** de la media se sostiene porque las autocorrelaciones se anulan con el rezago (a partir del 13 en la serie 1, del 2 en la serie 2 y desde el comienzo en la serie 3): la media de una sola trayectoria larga converge a la media del proceso.
+
+**Media con dos errores estándar.** El error estándar ingenuo es $\hat\sigma/\sqrt{n}$ y supone observaciones independientes. El de largo plazo es $\sqrt{\hat\sigma^2_{LP}/n}$, donde $\hat\sigma^2_{LP} = \hat\gamma(0) + 2\sum_{j=1}^{L}\big(1 - \tfrac{j}{L+1}\big)\hat\gamma(j)$ usa el núcleo de Bartlett con $L = \lfloor 4(n/100)^{2/9}\rfloor$. Se construyen los dos intervalos al 95 % con $\bar z \pm 1{,}96\,\mathrm{EE}$.
+
+```{r}
+#| label: tbl-ic
+ic <- dplyr::bind_rows(lapply(1:3, function(i) dplyr::mutate(dep[[i]]$ic, Serie = i, .before = 1)))
+tabla(data.frame(
+  Serie = ic$Serie, n = ic$n, L = ic$L, Media = ic$media,
+  `EE ingenuo` = ic$se_ingenuo, `EE largo plazo` = ic$se_largo_plazo, `Razón EE LP / ingenuo` = ic$razon_se,
+  `IC ingenuo` = sprintf("[%s ; %s]", fnum(ic$ic_ingenuo_inf, 4), fnum(ic$ic_ingenuo_sup, 4)),
+  `IC largo plazo` = sprintf("[%s ; %s]", fnum(ic$ic_lp_inf, 4), fnum(ic$ic_lp_sup, 4)),
+  check.names = FALSE), digits = 4)
+```
+
+**Por qué difieren.** El error de largo plazo incorpora las autocovarianzas, y el ingenuo las ignora. En las series 1 y 2, $r_1$ es negativo (`r fnum(dep[[1]]$r[1], 2)` y `r fnum(dep[[2]]$r[1], 2)`), de modo que $\hat\sigma^2_{LP} < \hat\gamma(0)$ y el error de largo plazo es **menor**: sus razones con el ingenuo son `r fnum(ic$razon_se[1], 2)` y `r fnum(ic$razon_se[2], 2)`. Con autocorrelación positiva ocurriría lo contrario y el intervalo ingenuo sería demasiado estrecho; aquí es demasiado ancho. En la serie 3, con $r_1 =$ `r fnum(dep[[3]]$r[1], 2)`, los dos son casi iguales (razón `r fnum(ic$razon_se[3], 2)`). **El adecuado es el de largo plazo**, porque las series 1 y 2 no son ruido blanco y el supuesto de independencia del ingenuo es falso; en la serie 3 coinciden prácticamente, pero el de largo plazo sigue siendo el válido en general.
+
+**Qué representa la media en la serie original.** En la serie 1, $\nabla(1-B^{12})\log Y_t$ es la diferencia entre la tasa de crecimiento logarítmica interanual de un mes y la del mes anterior; su media, `r fnum(ic$media[1], 5)`, es el cambio promedio de esa tasa por mes y no se distingue de 0 (el intervalo de largo plazo contiene el 0): el crecimiento interanual de las llegadas se mantiene estable, sin aceleración ni frenado apreciables. En la serie 2, la media de $\nabla Y$, `r fnum(ic$media[2], 3)`, es el aumento promedio diario de habitaciones ocupadas, es decir, la deriva de la serie original; el intervalo de largo plazo, [`r fnum(ic$ic_lp_inf[2], 2)`; `r fnum(ic$ic_lp_sup[2], 2)`], contiene el 0, de modo que con estos datos no se puede afirmar una deriva positiva, por más que la serie haya subido en promedio. En la serie 3 la media de los residuos es 0 por construcción (el intercepto absorbe el nivel), así que el intervalo es trivial y no aporta información: el nivel y la pendiente de la serie están en los coeficientes de la recta, que se reportan en la sección 6.

@@ -56,3 +56,11 @@ Este informe responde al enunciado del Trabajo 1 para el equipo **ST8ZPT**. Las 
 {{< include secciones/03-descripcion.qmd >}}
 
 {{< include secciones/04-operador.qmd >}}
+
+{{< include secciones/05-dependencia.qmd >}}
+
+{{< include secciones/06-pronostico.qmd >}}
+
+{{< include secciones/07-conclusion.qmd >}}
+
+{{< include secciones/08-interesados.qmd >}}

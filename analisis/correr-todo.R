@@ -48,3 +48,34 @@ print(as.data.frame(evidencia))
 # Descomposicion clasica donde el diagnostico sostiene estacionalidad (se decide con la evidencia de arriba).
 guardar(grafico_descomposicion(datos[[1]], descomposicion_clasica(datos[[1]]$valor, 12, "multiplicativa"), series[[1]]$unidad),
         "serie1-descomposicion.png", h = 7)
+
+# --- Seccion 4: operador de rezago, candidatas y raices ---
+cand <- function(nombre, log = FALSE, d = 0, D = 0, s = 1) list(nombre = nombre, log = log, d = d, D = D, s = s)
+candidatas <- list(
+  list(cand("Y"), cand("log Y", log = TRUE), cand("(1-B) log Y", TRUE, 1), cand("(1-B^12) log Y", TRUE, 0, 1, 12),
+       cand("(1-B)(1-B^12) log Y", TRUE, 1, 1, 12), cand("(1-B)(1-B^12) Y", FALSE, 1, 1, 12)),
+  list(cand("Y"), cand("(1-B) Y", FALSE, 1), cand("(1-B)^2 Y", FALSE, 2), cand("(1-B^7) Y", FALSE, 0, 1, 7),
+       cand("(1-B) log Y", TRUE, 1)),
+  list(cand("Y"), cand("(1-B) Y", FALSE, 1), cand("(1-B)^2 Y", FALSE, 2), cand("(1-B^6) Y", FALSE, 0, 1, 6),
+       cand("(1-B^12) Y", FALSE, 0, 1, 12), cand("log Y", TRUE))
+)
+tabla_cand <- lapply(seq_along(series), function(i) evaluar_candidatas(datos[[i]]$valor, candidatas[[i]]))
+for (i in seq_along(series)) { cat("\nSerie", i, "- candidatas\n"); print(as.data.frame(tabla_cand[[i]])) }
+
+# Identidad Var(grad Y) = 2 gamma(0) - 2 gamma(1) sobre cada serie (con log en la 1).
+identidad <- dplyr::bind_rows(lapply(seq_along(series), function(i) {
+  dplyr::mutate(identidad_var_diferencia(datos[[i]]$valor), serie = i, .before = 1)
+}))
+print(as.data.frame(identidad))
+
+# Raices de los polinomios de diferencia de cada serie.
+for (i in seq_along(series)) {
+  ps <- unique(lapply(candidatas[[i]], function(cd) c(cd$d, cd$D, cd$s)))
+  ps <- ps[vapply(ps, function(p) p[1] + p[2] > 0, logical(1))]
+  nombres <- vapply(ps, function(p) {
+    paste0(if (p[1] > 0) paste0("(1-B)", if (p[1] > 1) paste0("^", p[1]) else "") else "",
+           if (p[2] > 0) paste0("(1-B^", p[3], ")") else "")
+  }, character(1))
+  rs <- setNames(lapply(ps, function(p) polinomio_rezago(coef_diferencia(p[1], p[2], p[3]))), nombres)
+  guardar(grafico_raices(rs), sprintf("serie%d-raices.png", i), h = 5)
+}

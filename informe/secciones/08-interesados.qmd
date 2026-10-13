@@ -1,0 +1,131 @@
+# Argumentos para los interesados
+
+```{r}
+#| label: int-datos
+# Parametros del contexto (enunciado): camareras, reubicacion, capacidad, tutores.
+hab_por_camarera <- 14; costo_reubicacion <- 450000; capacidad <- 340
+est_por_tutor <- 25; costo_tutor_mes <- 3.2e6; meses_contrato <- 6
+sem2 <- 3:9  # pasos 3 a 9 = lunes 1 a domingo 7 de septiembre
+cam_pron <- ceiling(max(p2$pronostico[sem2]) / hab_por_camarera)
+cam_banda <- ceiling(max(p2$banda_sup[sem2]) / hab_por_camarera)
+tut_pron <- ceiling(max(p3$pronostico) / est_por_tutor)
+tut_banda <- ceiling(max(p3$banda_sup) / est_por_tutor)
+costo_tutor_sem <- costo_tutor_mes * meses_contrato
+sd_6a12 <- p1$sd_error[6:12]
+```
+
+## Mapa de interesados y costo del error
+
+El **error por exceso** es pronosticar más de lo que ocurre; el **error por defecto**, pronosticar menos. Los costos en pesos solo se calculan donde el contexto da las tarifas.
+
+### Serie 1: llegadas de turistas a Bahía Serena
+
+```{r}
+#| label: tbl-int-s1
+tabla(data.frame(
+  Interesado = c("Alcaldía", "Hoteleros", "Aerolíneas", "Residentes"),
+  `Decisión con el pronóstico` = c(
+    "Negociar vuelos adicionales y contratar policía de turismo y salvavidas con seis meses de anticipación",
+    "Planear ocupación, precios y personal por temporada",
+    "Asignar vuelos y asientos al destino",
+    "No deciden; viven las consecuencias de la afluencia"),
+  `Costo del error por exceso` = c(
+    "Un vuelo sin ocupación suficiente se paga con recursos públicos; personal contratado sin demanda",
+    "Capacidad y personal ocioso en los meses que resultan flojos",
+    "Vuelos con asientos vacíos",
+    "Preparativos que no se necesitaban"),
+  `Costo del error por defecto` = c(
+    "Falta de personal: accidentes y quejas",
+    "Ventas perdidas en temporada alta",
+    "Demanda que no se atiende",
+    "Servicios y playas saturados"),
+  check.names = FALSE))
+```
+
+El contexto no da tarifas de vuelos ni de personal, de modo que el costo no se expresa en pesos; se expresa en la unidad de la serie. El error típico del pronóstico a 12 pasos (RMSE de origen móvil) es de `r fnum(g1H$rmse, 2)` mil turistas por mes, un `r fnum(g1H$mape, 1)` % del nivel (MAPE), frente a `r fnum(r1H$rmse, 2)` mil de la regla de copiar el mismo mes del año anterior.
+
+### Serie 2: habitaciones ocupadas por noche
+
+```{r}
+#| label: tbl-int-s2
+tabla(data.frame(
+  Interesado = c("Gerencia del hotel", "Personal de limpieza", "Empresas que envían huéspedes"),
+  `Decisión con el pronóstico` = c(
+    "Cuántas reservas aceptar por encima de la capacidad de 340 habitaciones",
+    "Cuántas camareras trabajan cada día (una por cada 14 habitaciones ocupadas)",
+    "Dónde alojar a sus empleados y visitantes"),
+  `Costo del error por exceso` = c(
+    "Reservas rechazadas que se habrían podido atender",
+    paste0("Camareras programadas de más; un error de ", fnum(g2H$rmse, 1), " habitaciones equivale a ", fnum(g2H$rmse / hab_por_camarera, 2), " camareras"),
+    "Poca disponibilidad aparente"),
+  `Costo del error por defecto` = c(
+    paste0("Cada huésped reubicado en otro hotel cuesta ", fcop(costo_reubicacion), " por noche; si cada habitación de un error de ", fnum(g2H$rmse, 1), " terminara en reubicación, serían ", fmm(g2H$rmse * costo_reubicacion, 1), " por noche (cota ilustrativa)"),
+    "Faltan camareras: habitaciones sin limpiar o sobrecarga",
+    "Su gente es reubicada en otro hotel"),
+  check.names = FALSE))
+```
+
+### Serie 3: estudiantes matriculados en cursos virtuales
+
+```{r}
+#| label: tbl-int-s3
+tabla(data.frame(
+  Interesado = c("Dirección de extensión", "Tutores", "Estudiantes"),
+  `Decisión con el pronóstico` = c(
+    "Cuántos tutores contratar para el semestre (cada uno atiende hasta 25 estudiantes y se contrata por seis meses)",
+    "Aceptar el grupo que se les asigne",
+    "No deciden; dependen de que haya tutor"),
+  `Costo del error por exceso` = c(
+    paste0("Cada tutor de más cuesta ", fmm(costo_tutor_mes, 1), " al mes, es decir ", fmm(costo_tutor_sem, 1), " en el semestre"),
+    "Grupos más pequeños de lo necesario",
+    "Ninguno directo"),
+  `Costo del error por defecto` = c(
+    "Un grupo sin tutor genera deserción y quejas (el contexto no da tarifa)",
+    "Más de 25 estudiantes por tutor",
+    "Quedar en un grupo sin tutor: deserción"),
+  check.names = FALSE))
+```
+
+El error típico del pronóstico a seis meses es de `r fnum(g3H$rmse, 1)` estudiantes, o sea `r fnum(g3H$rmse / est_por_tutor, 2)` de un tutor.
+
+## El argumento en cinco partes
+
+### Serie 1
+
+**Afirmación.** En 2026 llegarán entre unos `r fnum(min(p1$pronostico), 0)` y `r fnum(max(p1$pronostico), 0)` mil turistas por mes, con dos temporadas altas, mayo–junio y sobre todo noviembre–diciembre, y el mes más bajo en agosto; los vuelos y el personal deben planearse para esas temporadas.
+
+**Evidencia.** El pronóstico para los próximos 12 meses va de `r fnum(min(p1$pronostico), 1)` mil (`r format(p1$fecha[which.min(p1$pronostico)], "%Y-%m")`) a `r fnum(max(p1$pronostico), 1)` mil (`r format(p1$fecha[which.max(p1$pronostico)], "%Y-%m")`). Probado hacia atrás en `r g1H$n` fechas distintas, el método se equivocó en promedio cuadrático por `r fnum(g1H$rmse, 2)` mil turistas a 12 meses (`r fnum(g1H$mape, 1)` % del nivel), contra `r fnum(r1H$rmse, 2)` mil de la regla de repetir el mes del año anterior.
+
+**Justificación.** Las llegadas siguen un calendario que se repite cada año y, a la vez, crecen. El método mide cuánto crece el nivel y cuánto pesa cada mes, y los actualiza con cada dato nuevo; por eso mejora la regla de copiar el año pasado, que no incorpora el crecimiento.
+
+**Alcance.** La recomendación vale para los próximos 12 meses, siempre que el calendario de temporadas se mantenga; cambiaría ante un choque (cierre de vuelos, un evento grande) o si el perfil de las temporadas se desplaza, y conviene reajustarla con cada dato nuevo. La banda de $\pm 1{,}96$ desviaciones es una guía, no una garantía: para los meses 6 a 12, que son los que la alcaldía debe contratar con anticipación, la desviación de los errores va de `r fnum(min(sd_6a12), 1)` a `r fnum(max(sd_6a12), 1)` mil turistas.
+
+**Objeción y respuesta.** *"Copiar el mes del año pasado es más simple de explicar y parece casi igual."* No es casi igual: en las mismas `r g1H$n` pruebas, ese atajo se equivocó `r fnum(r1H$rmse, 2)` mil frente a `r fnum(g1H$rmse, 2)` mil del método elegido, es decir, el atajo comete un error `r fpct(r1H$rmse / g1H$rmse - 1, 0)` mayor.
+
+### Serie 2
+
+**Afirmación.** Para la semana del lunes 1 al domingo 7 de septiembre de 2025 se esperan unas `r fnum(min(p2$pronostico[sem2]), 0)` a `r fnum(max(p2$pronostico[sem2]), 0)` habitaciones ocupadas por noche, bastante por debajo de las 340 de capacidad; con eso se programan `r cam_pron` camareras por noche, y `r cam_banda` si se quiere cubrir el extremo alto.
+
+**Evidencia.** El pronóstico para esa semana va de `r fnum(min(p2$pronostico[sem2]), 1)` a `r fnum(max(p2$pronostico[sem2]), 1)` habitaciones y el extremo alto de la banda es `r fnum(max(p2$banda_sup[sem2]), 1)`, a `r fnum(capacidad - max(p2$banda_sup[sem2]), 0)` habitaciones de la capacidad. A nueve días, el error típico del método elegido es de `r fnum(g2H$rmse, 2)` habitaciones, contra `r fnum(r2H$rmse, 2)` de suponer que dentro de nueve días será igual que hoy.
+
+**Justificación.** La ocupación subió durante los primeros meses y desde entonces se mantiene alta con oscilaciones; no hay un patrón por día de la semana que distinga, por ejemplo, el lunes del sábado. El método sigue ese nivel y su ligera curvatura.
+
+**Alcance.** Vale para los próximos nueve días. Que el pronóstico baje levemente (de `r fnum(p2$pronostico[1], 1)` a `r fnum(p2$pronostico[9], 1)`) no es una predicción de caída: es la curvatura que dejó la subida inicial, y la banda es varias veces mayor que esa baja. Un cambio de temporada, un evento o un contrato corporativo lo invalidaría.
+
+**Objeción y respuesta.** *"Si decir 'igual que hoy' casi no pierde, ¿para qué un modelo?"* A un día, la objeción tiene razón: el método elegido mejora al "igual que hoy" apenas `r fpct(1 - g2a$razon_rmse_ref, 1)`, y con `r g2a$n` pruebas eso no se distingue del azar. El valor aparece a nueve días: el error baja de `r fnum(r2H$rmse, 2)` a `r fnum(g2H$rmse, 2)` habitaciones, `r fnum(r2H$rmse - g2H$rmse, 2)` habitaciones menos, que equivalen a `r fnum((r2H$rmse - g2H$rmse) / hab_por_camarera, 2)` camareras por noche. Es una ganancia modesta, y conviene decirla así.
+
+### Serie 3
+
+**Afirmación.** Contratar `r tut_pron` tutores cubre la matrícula esperada del semestre (hasta unos `r fnum(max(p3$pronostico), 0)` estudiantes, que son `r tut_pron * est_por_tutor` cupos con `r tut_pron` tutores); con `r tut_banda` tutores se cubre incluso el extremo alto de la banda, de `r fnum(max(p3$banda_sup), 0)` estudiantes.
+
+**Evidencia.** El pronóstico crece de `r fnum(p3$pronostico[1], 1)` a `r fnum(p3$pronostico[6], 1)` estudiantes en seis meses; la matrícula ha crecido en promedio `r fnum(res[[3]]$regresiones$tend_lineal$mco$tabla$estimacion[2], 2)` estudiantes por mes, y esa pendiente es claramente distinta de cero. El error típico a seis meses es de `r fnum(g3H$rmse, 1)` estudiantes (`r fnum(g3H$rmse / est_por_tutor, 2)` de un tutor), contra `r fnum(r3H$rmse, 1)` de suponer que seguirá igual que el último mes.
+
+**Justificación.** La matrícula crece de forma sostenida y regular, sin altibajos por mes del año: es una recta con ruido. Mientras esa recta se mantenga, el crecimiento de los próximos meses se parece al de los pasados.
+
+**Alcance.** Vale para el próximo semestre. Cambiaría si se lanza un programa nuevo, si cambia la deserción o si el ritmo de crecimiento se modifica; los datos usados llegan hasta diciembre de 2025. La banda es heurística.
+
+**Objeción y respuesta.** *"¿Y si la matrícula supera lo previsto y quedan estudiantes sin tutor?"* Con `r tut_pron` tutores hay `r tut_pron * est_por_tutor` cupos, y el extremo alto de la banda llega a `r fnum(max(p3$banda_sup), 0)`: quedarían unos `r fnum(max(0, max(p3$banda_sup) - tut_pron * est_por_tutor), 0)` estudiantes sin cupo en el peor extremo de la banda. Un décimo tutor cubriría ese extremo y cuesta `r fmm(costo_tutor_sem, 1)` en el semestre; es una decisión de la dirección entre ese costo seguro y el riesgo de un grupo pequeño sin tutor, que el pronóstico no puede resolver por sí solo.
+
+## La nota para los interesados
+
+La nota de una página, sin fórmulas ni términos del curso y con un gráfico por serie, está en `informe/nota-interesados.pdf`; resume los argumentos de esta sección con las mismas cifras.

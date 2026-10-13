@@ -1,0 +1,149 @@
+# Descripción y patrón de cada serie
+
+## Gráficos en el tiempo y de rezagos
+
+Cada gráfico lleva título, ejes con unidad, fechas legibles y un pie con el número de observaciones. En el gráfico de rezagos, $Y_t$ se grafica contra $Y_{t-k}$ y el título de cada panel trae la autocorrelación $r_k$. Los rezagos se eligen por lo que cada serie puede revelar: el 1 mide la persistencia inmediata; los demás corresponden al ciclo que la frecuencia sugiere (semana en la serie diaria; semestre y año en las mensuales, porque la serie 3 se contrata por semestres).
+
+### Serie 1: llegadas mensuales de turistas
+
+```{r}
+#| label: fig-s1-tiempo
+#| fig-height: 4
+print(graficar_serie(datos[[1]], series[[1]]$nombre, series[[1]]$unidad))
+print(grafico_rezagos(datos[[1]]$valor, series[[1]]$ks, series[[1]]$unidad))
+```
+
+La serie sube de unos `r fnum(mean(datos[[1]]$valor[1:12]), 0)` mil turistas al mes en el primer año a unos `r fnum(mean(datos[[1]]$valor[169:180]), 0)` mil en el último y repite cada año un perfil con dos temporadas altas. Rezagos elegidos: $k = 1$ ($r_1 =$ `r fnum(acf_raw[[1]][1])`), $k = 6$, media vuelta del ciclo anual ($r_6 =$ `r fnum(acf_raw[[1]][6])`), y $k = 12$, el ciclo completo ($r_{12} =$ `r fnum(acf_raw[[1]][12])`). Que $r_{12}$ sea el mayor de los tres anticipa estacionalidad anual; que $r_6$ también sea alto lo explican las dos temporadas altas, que se ven más abajo.
+
+### Serie 2: habitaciones ocupadas por noche
+
+```{r}
+#| label: fig-s2-tiempo
+#| fig-height: 4
+print(graficar_serie(datos[[2]], series[[2]]$nombre, series[[2]]$unidad, series[[2]]$date_breaks))
+print(grafico_rezagos(datos[[2]]$valor, series[[2]]$ks, series[[2]]$unidad))
+```
+
+La ocupación sube de `r fnum(datos[[2]]$valor[1], 0)` habitaciones y supera por primera vez las 300 el `r ffecha(datos[[2]]$fecha[which(datos[[2]]$valor >= 300)[1]])`; después se mantiene entre `r fnum(min(datos[[2]]$valor[datos[[2]]$fecha >= datos[[2]]$fecha[which(datos[[2]]$valor >= 300)[1]]]), 0)` y `r fnum(max(datos[[2]]$valor), 0)` habitaciones con oscilaciones. Rezagos elegidos: $k = 1$ ($r_1 =$ `r fnum(acf_raw[[2]][1])`) y $k = 7$, la semana ($r_7 =$ `r fnum(acf_raw[[2]][7])`); un hotel de negocios podría tener patrón semanal y $k = 7$ es donde se vería. Ambas autocorrelaciones son altas: la serie está dominada por el nivel y no por un patrón que se repita cada siete días.
+
+### Serie 3: estudiantes matriculados
+
+```{r}
+#| label: fig-s3-tiempo
+#| fig-height: 4
+print(graficar_serie(datos[[3]], series[[3]]$nombre, series[[3]]$unidad))
+print(grafico_rezagos(datos[[3]]$valor, series[[3]]$ks, series[[3]]$unidad))
+```
+
+La matrícula crece de `r fnum(datos[[3]]$valor[1], 0)` a `r fnum(datos[[3]]$valor[130], 0)` estudiantes con oscilaciones alrededor de una trayectoria creciente. Rezagos elegidos: $k = 1$ ($r_1 =$ `r fnum(acf_raw[[3]][1])`), $k = 6$ (el semestre, $r_6 =$ `r fnum(acf_raw[[3]][6])`) y $k = 12$ (el año, $r_{12} =$ `r fnum(acf_raw[[3]][12])`). Las tres autocorrelaciones son altas y decrecen con el rezago; ninguno de los tres rezagos destaca sobre los otros.
+
+## Estacionalidad: decisión y evidencia
+
+La decisión sobre cada serie se apoya en dos instrumentos. El primero es el gráfico estacional, con un trazo por ciclo sobre el índice de estación: si el perfil se repite, los trazos se superponen en forma. El segundo es una descomposición clásica programada a mano (`descomposicion_clasica()`, con media móvil centrada $2\times s$ si $s$ es par y de orden $s$ si es impar) de la que se resumen tres números: la proporción de la varianza de la serie sin tendencia que explican los índices estacionales, la autocorrelación del residuo en el rezago $s$ y, para elegir entre escalas, la correlación entre nivel y amplitud por ciclo y la desviación relativa del residuo en cada versión.
+
+```{r}
+#| label: tbl-evidencia
+ev <- dplyr::bind_rows(lapply(1:3, function(i) {
+  dplyr::bind_rows(lapply(series[[i]]$s_cand, function(sc) dplyr::mutate(evidencia_estacional(datos[[i]]$valor, sc), serie = i, .before = 1)))
+}))
+tabla(data.frame(
+  Serie = ev$serie, `Período s` = ev$s,
+  `Varianza explicada por los índices (%)` = 100 * ev$prop_var_estacional,
+  `r en el rezago s del residuo aditivo` = ev$r_s_residuo,
+  `Correlación nivel–amplitud` = ev$cor_amplitud_nivel,
+  `Desv. relativa del residuo, aditiva` = ev$cv_residuo_aditiva,
+  `Desv. relativa del residuo, multiplicativa` = ev$cv_residuo_multiplicativa,
+  check.names = FALSE), digits = 3)
+```
+
+```{r}
+#| label: dec-s1
+dm1 <- descomposicion_clasica(datos[[1]]$valor, 12, "multiplicativa")
+da1 <- descomposicion_clasica(datos[[1]]$valor, 12, "aditiva")
+amp <- sapply(1:15, function(i) diff(range(datos[[1]]$valor[((i - 1) * 12 + 1):(i * 12)])))
+niv <- sapply(1:15, function(i) mean(datos[[1]]$valor[((i - 1) * 12 + 1):(i * 12)]))
+```
+
+### Serie 1: estacional con período 12 y escala multiplicativa
+
+El gráfico estacional muestra los quince ciclos con la misma forma, pero con una amplitud que crece de un ciclo al siguiente (los trazos más recientes quedan más arriba y más separados entre sus máximos y mínimos):
+
+```{r}
+#| label: fig-s1-estacional
+print(grafico_estacional(datos[[1]], 12, series[[1]]$unidad, meses_abrev()))
+```
+
+Los índices estacionales explican `r fpct(ev$prop_var_estacional[1])` de la varianza de la serie sin tendencia, y el residuo de la descomposición aditiva conserva una autocorrelación de `r fnum(ev$r_s_residuo[1])` en el rezago 12, señal de que esa escala deja estacionalidad sin explicar. **Decisión: estacionalidad anual, $s = 12$.**
+
+**Aditiva o multiplicativa.** La evidencia gráfica es que la amplitud estacional crece con el nivel: el rango de un año pasa de `r fnum(amp[1], 1)` mil turistas en el primer ciclo, con un nivel medio de `r fnum(niv[1], 1)`, a `r fnum(amp[15], 1)` mil en el último, con un nivel de `r fnum(niv[15], 1)`.
+
+```{r}
+#| label: fig-s1-amplitud
+#| fig-height: 3.6
+ggplot2::ggplot(data.frame(nivel = niv, amplitud = amp), ggplot2::aes(nivel, amplitud)) +
+  ggplot2::geom_point() +
+  ggplot2::labs(title = "Serie 1: amplitud estacional contra nivel, por año",
+                x = "Nivel medio del año (miles de personas)", y = "Amplitud: máximo menos mínimo (miles de personas)",
+                caption = "n = 15 ciclos anuales") +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+La evidencia numérica es la correlación entre nivel y amplitud por ciclo, `r fnum(ev$cor_amplitud_nivel[1], 3)`, y la desviación relativa del residuo, que es `r fnum(ev$cv_residuo_multiplicativa[1], 4)` en la versión multiplicativa frente a `r fnum(ev$cv_residuo_aditiva[1], 4)` en la aditiva, es decir `r fnum(ev$cv_residuo_aditiva[1] / ev$cv_residuo_multiplicativa[1], 1)` veces menor. **Decisión: descomposición multiplicativa.** La figura siguiente muestra la tendencia estimada, el componente estacional (índices normalizados a media 1) y el residuo.
+
+```{r}
+#| label: fig-s1-descomposicion
+#| fig-height: 7
+grafico_descomposicion(datos[[1]], dm1, series[[1]]$unidad)
+```
+
+```{r}
+#| label: tbl-s1-indices
+ind1 <- as.data.frame(t(dm1$indices))
+names(ind1) <- meses_abrev()
+tabla(ind1, digits = 3)
+```
+
+Los índices tienen media `r fnum(mean(dm1$indices), 3)`, como exige la normalización. Las dos temporadas altas son mayo–junio (`r fnum(dm1$indices[5], 2)` y `r fnum(dm1$indices[6], 2)`) y sobre todo noviembre–diciembre (`r fnum(dm1$indices[11], 2)` y `r fnum(dm1$indices[12], 2)`); la baja, agosto–septiembre (`r fnum(dm1$indices[8], 2)` y `r fnum(dm1$indices[9], 2)`). La tendencia sube de `r fnum(dm1$tendencia[7], 1)` a `r fnum(dm1$tendencia[174], 1)` mil turistas al mes entre los extremos donde la media móvil centrada está definida (se pierden seis meses en cada extremo).
+
+### Serie 2: sin estacionalidad semanal
+
+```{r}
+#| label: fig-s2-estacional
+print(grafico_estacional(datos[[2]], 7, series[[2]]$unidad, c("lun", "mar", "mié", "jue", "vie", "sáb", "dom")))
+```
+
+```{r}
+#| label: dec-s2
+d2 <- descomposicion_clasica(datos[[2]]$valor, 7, "aditiva")
+m_dia <- tapply(datos[[2]]$valor, ((seq_along(datos[[2]]$valor) - 1) %% 7) + 1, mean)
+```
+
+Los `r ceiling(nrow(datos[[2]]) / 7)` trazos semanales se separan sobre todo por el nivel, que sube durante los primeros meses. Los índices estacionales de período 7 explican solo `r fpct(ev$prop_var_estacional[2])` de la varianza de la serie sin tendencia, van de `r fnum(min(d2$indices), 2)` a `r fnum(max(d2$indices), 2)` habitaciones frente a una desviación del residuo de `r fnum(sd(d2$residuo, na.rm = TRUE), 2)`, y el residuo tiene una autocorrelación de `r fnum(ev$r_s_residuo[2])` en el rezago 7. Los promedios por día de la semana, de lunes a domingo, van de `r fnum(min(m_dia), 1)` a `r fnum(max(m_dia), 1)` habitaciones: una diferencia de `r fnum(max(m_dia) - min(m_dia), 1)` habitaciones, menor que el ruido diario. **Decisión: no hay estacionalidad semanal.** Que la serie sea de un hotel de negocios haría esperable un patrón de semana; los datos no lo muestran.
+
+### Serie 3: sin estacionalidad (se examinaron los períodos 12 y 6)
+
+```{r}
+#| label: fig-s3-estacional
+print(grafico_estacional(datos[[3]], 12, series[[3]]$unidad, meses_abrev()[c(3:12, 1:2)]))
+print(grafico_estacional(datos[[3]], 6, series[[3]]$unidad))
+```
+
+La serie empieza en marzo, de modo que el índice de estación 1 del primer gráfico es marzo. Los trazos anuales y semestrales no se superponen en una forma común. Los índices explican `r fpct(ev$prop_var_estacional[3])` de la varianza de la serie sin tendencia con $s = 12$ y `r fpct(ev$prop_var_estacional[4])` con $s = 6$; los residuos tienen autocorrelaciones de `r fnum(ev$r_s_residuo[3])` y `r fnum(ev$r_s_residuo[4])` en los rezagos 12 y 6. **Decisión: no hay estacionalidad** de período 12 ni de período 6. Las series 2 y 3 comparten el patrón de la evidencia: ningún período explica más de `r fpct(max(ev$prop_var_estacional[2:4]))` de la varianza sin tendencia, frente a `r fpct(ev$prop_var_estacional[1])` en la serie 1.
+
+## Patrón y correlograma de la serie sin transformar
+
+Se grafica la ACF muestral hasta $m = 24$ rezagos de cada serie sin transformar, con la banda de ruido blanco $\pm 1{,}96/\sqrt{n}$.
+
+```{r}
+#| label: fig-acf-raw
+#| fig-height: 3.6
+for (i in 1:3) {
+  print(correlograma(acf_raw[[i]], nrow(datos[[i]]), paste0("ACF de la serie ", i, " sin transformar (m = 24)")))
+}
+```
+
+**Serie 1.** La ACF tiene picos en los rezagos 12 ($r_{12} =$ `r fnum(acf_raw[[1]][12])`) y 24 ($r_{24} =$ `r fnum(acf_raw[[1]][24])`), un pico intermedio en el 6 ($r_6 =$ `r fnum(acf_raw[[1]][6])`) porque el año tiene dos temporadas altas, y valles en los rezagos 2 y 3 ($r_2 =$ `r fnum(acf_raw[[1]][2])`, $r_3 =$ `r fnum(acf_raw[[1]][3])`); `r length(which(abs(acf_raw[[1]]) > 1.96 / sqrt(180)))` de los 24 rezagos salen de la banda. Un decaimiento lento sobre el que se montan picos en múltiplos del período es la firma de **tendencia más estacionalidad** (tipo IV): la tendencia mantiene altas las autocorrelaciones y el perfil las hace oscilar.
+
+**Serie 2.** La ACF empieza en `r fnum(acf_raw[[2]][1])` y baja sin alzas hasta `r fnum(acf_raw[[2]][24])` en el rezago 24, con los 24 rezagos fuera de la banda. No hay picos en el rezago 7 ni en sus múltiplos ($r_7 =$ `r fnum(acf_raw[[2]][7])` es un punto más de la curva). Es la forma de una serie **con tendencia y sin estacionalidad** (tipo III): decaimiento lento y todas las autocorrelaciones positivas.
+
+**Serie 3.** También decae lentamente, de `r fnum(acf_raw[[3]][1])` a `r fnum(acf_raw[[3]][24])`, con los 24 rezagos fuera de la banda y como mucho alzas de `r fnum(max(acf_raw[[3]][-1] - acf_raw[[3]][-24]), 3)` entre rezagos consecutivos, sin picos en 6 ni en 12. Es de nuevo la forma de una serie **con tendencia y sin estacionalidad** (tipo III).

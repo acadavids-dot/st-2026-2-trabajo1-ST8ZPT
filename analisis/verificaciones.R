@@ -306,6 +306,26 @@ verificar(abs(tm$observado - as.numeric(t.test(e_v)$statistic)) < 1e-10 && abs(t
 jb_h <- jarque_bera(c(-2, -1, 0, 1, 2))
 verificar(abs(jb_h$observado - 5 / 6 * (1.3^2 / 4)) < 1e-12 && abs(jb_h$asimetria) < 1e-12 && abs(jb_h$curtosis - 1.7) < 1e-12,
           "jarque_bera: ejemplo a mano x = (-2,...,2) da S = 0, K = 1.7 y JB = 0.3521")
+# --- VERIFICACION: flujo completo (analizar_serie) reproducible, ganador reajustado y banda heuristica ---
+fechas_ver <- leer_serie("datos/ST8ZPT-serie-3.csv")$fecha
+cfg_ver <- list(s = 12, H = 6, frecuencia = "mensual",
+                asignacion = data.frame(id = c("tend_lineal", "holt", "ingenuo"), rol = c("sostenido", "sostenido", "referente"),
+                                        evidencia = c("a", "b", "c")))
+r_a <- analizar_serie(d_ver[[3]], fechas_ver, cfg_ver)
+r_b <- analizar_serie(d_ver[[3]], fechas_ver, cfg_ver)
+verificar(identical(r_a$tabla_h1, r_b$tabla_h1) && identical(r_a$tabla_H, r_b$tabla_H) && identical(r_a$pronostico, r_b$pronostico),
+          "analizar_serie es reproducible: dos corridas dan exactamente las mismas tablas y el mismo pronostico")
+verificar(all(r_a$tabla_h1$n == 26) && all(r_a$tabla_H$n == 21) && r_a$n0 == 104 && sum(r_a$tabla_h1$rol == "referente") == 1,
+          "analizar_serie: mismos orígenes para todos los metodos (26 en h = 1 y 21 en h = 6) y un solo referente")
+g_ver <- r_a$ajustes[[r_a$ganador_H]]
+fc_ver <- do.call(g_ver$ajustar, c(list(d_ver[[3]]), g_ver$parametros))$pronosticar(6)
+sd_ver <- vapply(1:6, function(h) sd(errores_horizonte(g_ver$om, h)$e), numeric(1))
+verificar(max(abs(r_a$pronostico$pronostico - fc_ver)) < 1e-12 && max(abs(r_a$pronostico$banda_sup - (fc_ver + 1.96 * sd_ver))) < 1e-12 &&
+            max(abs(r_a$pronostico$banda_inf - (fc_ver - 1.96 * sd_ver))) < 1e-12 &&
+            identical(r_a$pronostico$fecha[1], as.Date("2026-01-01")),
+          "pronostico final = ganador reajustado sobre toda la serie; banda = pronostico +-1.96 sd de los errores de origen movil por horizonte")
+verificar(!any(r_a$tabla_h1$id[r_a$tabla_h1$rol != "referente"][1] == "ingenuo"), "el ganador nunca es el referente (el referente es una fila de comparacion)")
+
 e_dw <- z_ver$S3
 dw <- durbin_watson(e_dw)
 verificar(abs(dw$d - sum(diff(e_dw)^2) / sum(e_dw^2)) < 1e-12 && abs(dw$d - dw$aprox_2_1_menos_r1) < 0.05,

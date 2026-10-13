@@ -42,3 +42,63 @@ imprimir_prueba <- function(p) {
     paste0("6. **Lectura.** ", p$lectura)
   )
 }
+
+# t de media cero: H0: mu = 0 contra H1: mu != 0. Bajo H0 e independencia, t = ybar / (s / sqrt(n)) ~ t_{n-1}.
+# Para errores de pronostico de un paso, mu != 0 significa sesgo sistematico.
+prueba_t_media <- function(e, que = "los errores", alpha = 0.05) {
+  stopifnot(is.numeric(e), !anyNA(e), length(e) > 2)
+  n <- length(e)
+  t_obs <- mean(e) / (stats::sd(e) / sqrt(n))
+  crit <- stats::qt(1 - alpha / 2, n - 1)
+  nueva_prueba(
+    nombre = paste0("Prueba t de media cero sobre ", que),
+    h0 = "mu = 0", h1 = "mu distinto de 0",
+    estadistico = "t", formula = "media / (s / sqrt(n))",
+    distribucion = paste0("t de Student con ", n - 1, " grados de libertad"),
+    region = paste0("|t| > ", formatear_num(crit)), valor_critico = crit,
+    observado = t_obs, valor_p = 2 * stats::pt(abs(t_obs), n - 1, lower.tail = FALSE),
+    lectura_rechaza = paste0("La media de ", que, " (", formatear_num(mean(e)), ") es distinta de 0: el metodo se equivoca en una direccion (sesgo)."),
+    lectura_no_rechaza = paste0("No hay evidencia de que la media de ", que, " (", formatear_num(mean(e)), ") sea distinta de 0: no se detecta sesgo."),
+    alpha = alpha
+  )
+}
+
+# Jarque-Bera: H0: normalidad (asimetria 0 y curtosis 3). JB = n/6 * (S^2 + (K-3)^2/4) ~ chi2_2.
+# S y K son la asimetria y la curtosis muestrales con momentos de divisor n.
+jarque_bera <- function(x, que = "los errores", alpha = 0.05) {
+  stopifnot(is.numeric(x), !anyNA(x), length(x) > 3)
+  n <- length(x)
+  xc <- x - mean(x)
+  m2 <- mean(xc^2)
+  S <- mean(xc^3) / m2^1.5
+  K <- mean(xc^4) / m2^2
+  JB <- n / 6 * (S^2 + (K - 3)^2 / 4)
+  crit <- stats::qchisq(1 - alpha, 2)
+  res <- nueva_prueba(
+    nombre = paste0("Prueba de Jarque-Bera sobre ", que),
+    h0 = "asimetria = 0 y curtosis = 3 (normalidad)", h1 = "asimetria distinta de 0 o curtosis distinta de 3",
+    estadistico = "JB", formula = "(n/6) (S^2 + (K-3)^2/4)",
+    distribucion = "chi-cuadrado con 2 grados de libertad",
+    region = paste0("JB > ", formatear_num(crit)), valor_critico = crit,
+    observado = JB, valor_p = stats::pchisq(JB, 2, lower.tail = FALSE),
+    lectura_rechaza = paste0(que, " no son normales (S = ", formatear_num(S), ", K = ", formatear_num(K), "): la banda de +-1,96 sd debe leerse con cautela."),
+    lectura_no_rechaza = paste0("No hay evidencia contra la normalidad de ", que, " (S = ", formatear_num(S), ", K = ", formatear_num(K), ")."),
+    alpha = alpha
+  )
+  res$asimetria <- S
+  res$curtosis <- K
+  res
+}
+
+# Durbin-Watson como diagnostico (no como prueba con tabla): d = sum_{t>=2} (e_t - e_{t-1})^2 / sum e_t^2.
+# Se lee con d ~ 2 (1 - r1): d cerca de 2 = sin autocorrelacion de orden 1; d < 2 = positiva; d > 2 = negativa.
+durbin_watson <- function(e) {
+  stopifnot(is.numeric(e), !anyNA(e), length(e) > 2)
+  n <- length(e)
+  d <- sum((e[-1] - e[-n])^2) / sum(e^2)
+  r1 <- acf_muestral(e, 1)
+  tibble::tibble(d = d, r1 = r1, aprox_2_1_menos_r1 = 2 * (1 - r1),
+                 lectura = if (d < 1.5) "d claramente menor que 2: autocorrelacion positiva de orden 1"
+                           else if (d > 2.5) "d claramente mayor que 2: autocorrelacion negativa de orden 1"
+                           else "d cerca de 2: sin autocorrelacion de orden 1 apreciable")
+}

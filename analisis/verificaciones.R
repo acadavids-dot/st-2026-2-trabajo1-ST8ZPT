@@ -38,3 +38,43 @@ verificar(max(abs(dm0$indices - M_real)) < 1e-10 && abs(mean(dm0$indices) - 1) <
 dm <- descomposicion_clasica((50 + 0.4 * seq_len(60)) * rep(M_real, 10), 6, "multiplicativa")
 verificar(max(abs(dm$indices - M_real)) < 0.01 && abs(mean(dm$indices) - 1) < 1e-10,
           "descomposicion multiplicativa con tendencia: error de indices < 0.01 y media 1")
+
+# --- VERIFICACION: diferenciar() contra diff() ---
+combos <- list(c(1, 0, 1), c(2, 0, 1), c(0, 1, 12), c(1, 1, 12), c(0, 1, 7), c(1, 1, 7), c(2, 1, 6), c(0, 2, 4))
+ok_dif <- vapply(combos, function(p) {
+  d <- p[1]; D <- p[2]; s <- p[3]
+  ref <- y_prueba
+  if (D > 0) for (i in seq_len(D)) ref <- diff(ref, lag = s)
+  if (d > 0) ref <- diff(ref, differences = d)
+  length(ref) == length(y_prueba) - d - D * s && max(abs(diferenciar(y_prueba, d, D, s) - ref)) < 1e-10
+}, logical(1))
+verificar(all(ok_dif), sprintf("diferenciar coincide con diff() en %d combinaciones de (d, D, s)", length(combos)))
+
+# --- VERIFICACION: polinomio_rezago() y coef_diferencia() contra casos conocidos ---
+r1 <- polinomio_rezago(coef_diferencia(1, 0, 1))
+verificar(nrow(r1) == 1 && abs(r1$re - 1) < 1e-10 && abs(r1$modulo - 1) < 1e-10, "1 - B tiene una raiz en B = 1")
+r4 <- polinomio_rezago(coef_diferencia(0, 1, 4))
+verificar(nrow(r4) == 4 && all(abs(r4$modulo - 1) < 1e-10), "1 - B^4 tiene 4 raices de modulo 1 (+-1, +-i)")
+verificar(identical(coef_diferencia(2, 0, 1), c(-2, 1)) && identical(coef_diferencia(1, 1, 2), c(-1, -1, 1)),
+          "coef_diferencia: (1-B)^2 = 1 - 2B + B^2 y (1-B)(1-B^2) = 1 - B - B^2 + B^3")
+# Aplicar el polinomio con sus coeficientes (y_t + c1 y_{t-1} + ...) debe dar lo mismo que diferenciar().
+aplicar_coef <- function(y, cf) {
+  p <- length(cf)
+  n <- length(y)
+  sapply((p + 1):n, function(t) y[t] + sum(cf * y[(t - 1):(t - p)]))
+}
+ok_cf <- all(vapply(combos, function(p) {
+  max(abs(aplicar_coef(y_prueba, coef_diferencia(p[1], p[2], p[3])) - diferenciar(y_prueba, p[1], p[2], p[3]))) < 1e-8
+}, logical(1)))
+verificar(ok_cf, "coef_diferencia aplicado como polinomio coincide con diferenciar()")
+
+# --- VERIFICACION: media de la serie diferenciada y identidad Var(grad Y) = 2 gamma(0) - 2 gamma(1) ---
+# La suma de (1-B)y telescopa: mean(grad y) = (y_n - y_1)/(n - 1) exactamente.
+verificar(abs(mean(diferenciar(y_prueba, 1, 0, 1)) - (y_prueba[200] - y_prueba[1]) / 199) < 1e-12,
+          "media de grad y = (y_n - y_1)/(n-1) (telescopa)")
+set.seed(2)
+y_ar <- numeric(3000)
+for (t in 2:3000) y_ar[t] <- 0.5 * y_ar[t - 1] + rnorm(1)
+id <- identidad_var_diferencia(y_ar)
+verificar(abs(id$var_diferencia / id$dos_g0_menos_dos_g1 - 1) < 0.01,
+          sprintf("identidad de Var(grad Y): %.4f vs %.4f (AR(1) estacionario, n = 3000)", id$var_diferencia, id$dos_g0_menos_dos_g1))

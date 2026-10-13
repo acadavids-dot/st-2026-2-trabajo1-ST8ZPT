@@ -53,17 +53,24 @@ grafico_estacional <- function(d, s, unidad, etiquetas = NULL) {
 
 # Correlograma: barras de r_1..r_m con la banda de ruido blanco +-1.96/sqrt(n).
 # n es el tamano de la serie sobre la que se calculo r (no m).
-correlograma <- function(r, n, titulo = "Correlograma (ACF)", ylab = "Autocorrelacion") {
+correlograma <- function(r, n, titulo = "Correlograma (ACF)", ylab = "Autocorrelacion", bartlett = NULL) {
   stopifnot(is.numeric(r), is.numeric(n), length(n) == 1, n > 1)
   d <- data.frame(k = seq_along(r), r = r)
   b <- 1.96 / sqrt(n)
-  ggplot2::ggplot(d, ggplot2::aes(k, r)) +
+  p <- ggplot2::ggplot(d, ggplot2::aes(k, r)) +
     ggplot2::geom_hline(yintercept = 0) +
     ggplot2::geom_hline(yintercept = c(-b, b), linetype = "dashed", colour = "steelblue") +
     ggplot2::geom_segment(ggplot2::aes(xend = k, yend = 0)) +
-    ggplot2::geom_point(size = 1.2) +
-    ggplot2::labs(title = titulo, x = "Rezago k", y = ylab,
-                  caption = paste0("n = ", n, " observaciones; banda de ruido blanco +-1,96/sqrt(n) = +-", round(b, 3))) +
+    ggplot2::geom_point(size = 1.2)
+  cap <- paste0("n = ", n, " observaciones; banda de ruido blanco +-1,96/sqrt(n) = +-", round(b, 3), " (azul)")
+  if (!is.null(bartlett)) {
+    stopifnot(length(bartlett) == length(r))
+    db <- data.frame(k = rep(d$k, 2), b = c(bartlett, -bartlett), lado = rep(c("sup", "inf"), each = length(r)))
+    p <- p + ggplot2::geom_step(data = db, ggplot2::aes(k, b, group = lado), colour = "firebrick",
+                                linetype = "dotted", inherit.aes = FALSE)
+    cap <- paste0(cap, "; banda de Bartlett (rojo)")
+  }
+  p + ggplot2::labs(title = titulo, x = "Rezago k", y = ylab, caption = cap) +
     ggplot2::theme_minimal(base_size = 11)
 }
 

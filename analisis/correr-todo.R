@@ -110,3 +110,46 @@ for (i in seq_along(series)) {
   cat("Rezagos de la ACF fuera de la banda de Bartlett:", which(abs(r) > bb), "\n")
   cat("Rezagos de la PACF fuera de la banda de ruido blanco:", which(abs(phi) > 1.96 / sqrt(n)), "\n")
 }
+
+# --- Seccion 6: pronostico y evaluacion (origen movil, ganador, regresiones, validacion, pronostico final) ---
+# Los resultados pesados se guardan en resultados/serieN.rds y el informe los lee (se regeneran corriendo este script).
+dir.create("resultados", showWarnings = FALSE)
+asignacion <- readr::read_csv("analisis/asignacion-metodos.csv", col_types = readr::cols(.default = "c"), progress = FALSE)
+resultados <- list()
+for (i in seq_along(series)) {
+  s <- series[[i]]
+  d <- datos[[i]]
+  cfg <- list(s = s$s_cand[1], H = s$H, frecuencia = s$frecuencia, unidad = s$unidad,
+              asignacion = as.data.frame(dplyr::filter(asignacion, serie == as.character(i))))
+  res <- analizar_serie(d$valor, d$fecha, cfg)
+  resultados[[i]] <- res
+  cat("\n=== Serie", i, "- origen movil h = 1 (n0 =", res$n0, ") ===\n")
+  print(as.data.frame(res$tabla_h1[, c("metodo", "rol", "parametros", "n", "rmse", "mad", "mape", "razon_rmse_ref")]), digits = 4)
+  cat("\n=== Serie", i, "- origen movil h =", res$H, "===\n")
+  print(as.data.frame(res$tabla_H[, c("metodo", "rol", "parametros", "n", "rmse", "mad", "mape", "razon_rmse_ref")]), digits = 4)
+  cat("Ganador h = 1:", res$ganador_h1, "| ganador h =", res$H, ":", res$ganador_H, "\n")
+
+  # figuras: curvas y mapas de MSE, residuos de las regresiones, validacion del ganador y pronostico final
+  for (a in res$ajustes) {
+    if (!is.null(a$opt)) guardar(grafico_mse(a$opt, a$etiqueta), sprintf("serie%d-mse-%s.png", i, a$id), h = if (length(a$parametros_elegidos) >= 3) 6 else 4.5)
+  }
+  for (id in names(res$regresiones)) {
+    rg <- res$regresiones[[id]]
+    guardar(correlograma(rg$r, rg$mco$n, paste0("ACF de los residuos: ", rg$etiqueta, " (serie ", i, ")")), sprintf("serie%d-residuos-%s.png", i, id))
+  }
+  v <- res$validacion
+  g1 <- res$ajustes[[res$ganador_h1]]
+  diaria <- s$frecuencia == "diaria"
+  brk <- if (diaria) "1 week" else NULL
+  lab <- if (diaria) "%m-%d" else "%Y-%m"
+  guardar(patchwork::wrap_plots(
+    grafico_errores(v$e, v$fechas_objetivo, s$unidad, paste0("Errores de origen movil a un paso: ", g1$etiqueta, " (serie ", i, ")"), brk, lab),
+    correlograma(v$r, v$n, paste0("ACF de los errores (m = ", v$m, ")")), ncol = 1),
+    sprintf("serie%d-validacion.png", i), h = 7)
+  gH <- res$ajustes[[res$ganador_H]]
+  guardar(grafico_pronostico(d$fecha, d$valor, res$pronostico, s$unidad, gH$etiqueta, ultimos = if (diaria) 40 else 48,
+                             date_breaks = brk, date_labels = if (diaria) "%Y-%m-%d" else "%Y-%m"),
+          sprintf("serie%d-pronostico.png", i))
+  res$ajustes <- lapply(res$ajustes, function(a) { a$ajustar <- NULL; a })  # las funciones no se guardan en el .rds
+  saveRDS(res, sprintf("resultados/serie%d.rds", i))
+}

@@ -78,3 +78,49 @@ for (t in 2:3000) y_ar[t] <- 0.5 * y_ar[t - 1] + rnorm(1)
 id <- identidad_var_diferencia(y_ar)
 verificar(abs(id$var_diferencia / id$dos_g0_menos_dos_g1 - 1) < 0.01,
           sprintf("identidad de Var(grad Y): %.4f vs %.4f (AR(1) estacionario, n = 3000)", id$var_diferencia, id$dos_g0_menos_dos_g1))
+
+# --- VERIFICACION: pacf_dl() contra pacf() (maxima diferencia absoluta < 1e-10) ---
+# Series: AR(2) simulado, y las tres series transformadas elegidas (se calculan aqui directamente).
+set.seed(3)
+y_ar2 <- numeric(500)
+for (t in 3:500) y_ar2[t] <- 0.6 * y_ar2[t - 1] - 0.3 * y_ar2[t - 2] + rnorm(1)
+d_ver <- lapply(1:3, function(i) leer_serie(sprintf("datos/ST8ZPT-serie-%d.csv", i))$valor)
+z_ver <- list(AR2 = y_ar2,
+              S1 = diferenciar(log(d_ver[[1]]), 1, 1, 12),
+              S2 = diferenciar(d_ver[[2]], 1, 0, 1),
+              S3 = residuos_tendencia(d_ver[[3]], 1)$residuos)
+dif_pacf <- vapply(z_ver, function(z) {
+  max(abs(pacf_dl(acf_muestral(z, 24)) - as.numeric(pacf(z, lag.max = 24, plot = FALSE)$acf)))
+}, numeric(1))
+verificar(all(dif_pacf < 1e-10), sprintf("pacf_dl coincide con pacf() (diferencia maxima %.2e en AR2, S1, S2, S3)", max(dif_pacf)))
+# A mano: con r1 = 0.5, r2 = 0.2 -> phi_22 = (0.2 - 0.5*0.5)/(1 - 0.5*0.5) = -0.05/0.75
+verificar(abs(pacf_dl(c(0.5, 0.2))[2] - (-0.05 / 0.75)) < 1e-12 && abs(pacf_dl(c(0.5, 0.2))[1] - 0.5) < 1e-12,
+          "pacf_dl: ejemplo a mano r1 = 0.5, r2 = 0.2 da phi_11 = 0.5 y phi_22 = -1/15")
+# Teoria: r_k = rho^k (AR(1)) -> pacf = (rho, 0, 0, ...)
+verificar(max(abs(pacf_dl(0.7^(1:6))[-1])) < 1e-12 && abs(pacf_dl(0.7^(1:6))[1] - 0.7) < 1e-12,
+          "pacf_dl: r_k = 0.7^k da phi_11 = 0.7 y phi_kk = 0 para k >= 2")
+
+# --- VERIFICACION: ljung_box() contra Box.test(type = 'Ljung-Box') ---
+lb_propia <- ljung_box(z_ver$S2, 24)
+lb_r <- Box.test(z_ver$S2, lag = 24, type = "Ljung-Box")
+verificar(abs(lb_propia$observado - as.numeric(lb_r$statistic)) < 1e-8 && abs(lb_propia$valor_p - lb_r$p.value) < 1e-10,
+          sprintf("ljung_box coincide con Box.test: Q = %.4f, p = %.4f", lb_propia$observado, lb_propia$valor_p))
+
+# --- VERIFICACION: banda de Bartlett y varianza de largo plazo contra calculos a mano ---
+bb <- banda_bartlett(c(0.5, 0.3, 0.1), 100)
+verificar(abs(bb[1] - 1.96 / 10) < 1e-12 && abs(bb[2] - 1.96 * sqrt((1 + 2 * 0.25) / 100)) < 1e-12 &&
+            abs(bb[3] - 1.96 * sqrt((1 + 2 * (0.25 + 0.09)) / 100)) < 1e-12,
+          "banda_bartlett: h = 1 es 1.96/sqrt(n); h = 2 y 3 coinciden con el calculo a mano")
+# y = (1, 3, 2, 4): media 2.5, g0 = 1.25, g1 = -0.4375; con L = 1: g0 + 2 (1 - 1/2) g1 = 0.8125
+verificar(abs(varianza_largo_plazo(c(1, 3, 2, 4), 1) - 0.8125) < 1e-12 && abs(varianza_largo_plazo(c(1, 3, 2, 4), 0) - 1.25) < 1e-12,
+          "varianza_largo_plazo: ejemplo a mano y = (1,3,2,4) da 1.25 (L = 0) y 0.8125 (L = 1)")
+
+# --- VERIFICACION: residuos_tendencia() contra lm() y bloques ---
+tt <- seq_along(d_ver[[3]])
+ajuste_lm <- lm(d_ver[[3]] ~ tt)
+verificar(max(abs(residuos_tendencia(d_ver[[3]], 1)$coeficientes - as.numeric(coef(ajuste_lm)))) < 1e-8 &&
+            max(abs(residuos_tendencia(d_ver[[3]], 1)$residuos - as.numeric(resid(ajuste_lm)))) < 1e-8 &&
+            abs(mean(residuos_tendencia(d_ver[[3]], 1)$residuos)) < 1e-10,
+          "residuos_tendencia coincide con lm() y su media es 0")
+verificar(identical(sum(bloques_media_var(1:130, 4)$n), 130L) && all(bloques_media_var(1:130, 4)$n >= 32),
+          "bloques_media_var reparte las 130 observaciones en 4 bloques consecutivos")

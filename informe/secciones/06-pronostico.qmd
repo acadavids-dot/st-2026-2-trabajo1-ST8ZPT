@@ -1,0 +1,516 @@
+# Pronóstico y evaluación
+
+```{r}
+#| label: pron-setup
+tb1 <- lapply(res, function(r) r$tabla_h1)
+tbH <- lapply(res, function(r) r$tabla_H)
+mejor <- function(tb) tb[tb$rol != "referente", ][1, ]
+refe <- function(tb) tb[tb$rol == "referente", ]
+H <- vapply(res, function(r) r$H, numeric(1))
+# Hechos en los que se apoya la narrativa de esta seccion: si los resultados cambian, el informe falla en lugar de quedar desactualizado.
+stopifnot(
+  res[[1]]$ganador_h1 == "hw_mult", res[[1]]$ganador_H == "hw_mult",
+  res[[2]]$ganador_h1 == "ses", res[[2]]$ganador_H == "tend_cuad",
+  res[[3]]$ganador_h1 == "tend_lineal", res[[3]]$ganador_H == "dmm",
+  refe(tb1[[1]])$id == "ingenuo_est", refe(tb1[[2]])$id == "ingenuo", refe(tb1[[3]])$id == "ingenuo",
+  all(vapply(1:3, function(i) mejor(tb1[[i]])$supera_referente && mejor(tbH[[i]])$supera_referente, logical(1))),
+  !tb1[[1]]$supera_referente[tb1[[1]]$id == "tend_est"],
+  tbH[[2]]$supera_referente[tbH[[2]]$id == "ingenuo_est"]
+)
+```
+
+## Métodos aplicados y asignación
+
+El catálogo tiene 13 métodos. En cada serie se aplican los que el diagnóstico de las secciones 3 a 5 sostiene, y al menos uno cuyo supuesto ese diagnóstico contradice (contraste); el referente ingenuo es una fila más de cada tabla. La tabla siguiente dice, para cada método y cada serie, si se aplicó y con qué papel: **S** (sostenido por el diagnóstico), **C** (contraste), **R** (referente) o — (no se aplicó).
+
+```{r}
+#| label: tbl-cobertura
+nombres_m <- c(media = "Media simple", ingenuo = "Ingenuo", ingenuo_est = "Ingenuo estacional", mm = "Media móvil MM(k)",
+               ses = "Suavizamiento exponencial simple", dmm = "Doble media móvil DMM(k)", tend_lineal = "Tendencia lineal",
+               tend_cuad = "Tendencia cuadrática", tend_exp = "Tendencia exponencial", tend_est = "Tendencia + ficticias de suma cero",
+               holt = "Holt", hw = "Holt–Winters aditivo", hw_mult = "Holt–Winters multiplicativo")
+papel <- function(i, id) {
+  a <- res[[i]]$asignacion
+  rol <- a$rol[a$id == id]
+  if (length(rol) == 0) "—" else c(sostenido = "S", contraste = "C", referente = "R")[[rol]]
+}
+cob <- data.frame(Método = unname(nombres_m), `Serie 1` = vapply(names(nombres_m), function(id) papel(1, id), ""),
+                  `Serie 2` = vapply(names(nombres_m), function(id) papel(2, id), ""),
+                  `Serie 3` = vapply(names(nombres_m), function(id) papel(3, id), ""), check.names = FALSE)
+tabla(cob)
+```
+
+Los 13 métodos quedan cubiertos al menos en una serie. La evidencia con que se decidió cada asignación, junto con los parámetros que eligió cada método:
+
+```{r}
+#| label: tbl-asignacion
+asig_tab <- dplyr::bind_rows(lapply(1:3, function(i) {
+  a <- res[[i]]$ajustes
+  data.frame(Serie = i, Método = vapply(a, function(x) x$etiqueta, ""), Papel = vapply(a, function(x) x$rol, ""),
+             `Parámetros elegidos` = vapply(a, function(x) bonito(texto_parametros(x$parametros_elegidos)), ""),
+             Evidencia = vapply(a, function(x) x$evidencia, ""), check.names = FALSE, row.names = NULL)
+}))
+tabla(asig_tab)
+```
+
+## Elección de los parámetros: curvas y mapas de MSE
+
+Los parámetros se eligen con `optimizar()` **solo en el tramo de estimación** $1,\dots,n_0$, por MSE de un paso, sobre las rejillas del enunciado: $k = 2,\dots,12$ para la media móvil, $\alpha = 0{,}02,\dots,0{,}98$ para SES, $k = 3,\dots,12$ para la doble media móvil, $(\alpha,\beta)$ con paso $0{,}05$ para Holt y $(\alpha,\beta,\gamma)$ con paso $0{,}1$ para Holt–Winters (las constantes viven en el intervalo abierto $(0,1)$, de modo que HW recorre $0{,}1,\dots,0{,}9$). Como los calentamientos difieren entre puntos de la rejilla, el MSE se promedia solo sobre las posiciones en que todos los puntos de la rejilla tienen pronóstico. Las tendencias por mínimos cuadrados y los ingenuos no tienen parámetros por elegir.
+
+```{r}
+#| label: tbl-parametros
+pt <- dplyr::bind_rows(lapply(1:3, function(i) {
+  a <- Filter(function(x) !is.null(x$opt), res[[i]]$ajustes)
+  data.frame(Serie = i, Método = vapply(a, function(x) x$etiqueta, ""),
+             `Parámetros` = vapply(a, function(x) bonito(texto_parametros(x$parametros_elegidos)), ""),
+             `MSE de un paso` = vapply(a, function(x) x$opt$mejor$mse, numeric(1)),
+             `Errores usados` = vapply(a, function(x) x$opt$n_comun, numeric(1)),
+             `En el borde de la rejilla` = vapply(a, function(x) en_borde(x$opt), ""), check.names = FALSE, row.names = NULL)
+}))
+tabla(pt, digits = 3)
+```
+
+```{r}
+#| label: tbl-bordes
+bordes <- pt[pt[["En el borde de la rejilla"]] != "", c("Serie", "Método", "Parámetros", "En el borde de la rejilla")]
+```
+
+Un parámetro en el límite de la rejilla es un diagnóstico, no un detalle: $\hat\alpha$ pegado a cero indica una serie casi ruido alrededor de un nivel fijo, y pegado a uno, que el mejor pronóstico es el último dato y la serie es casi un paseo aleatorio; una ventana $k$ en su valor mínimo o máximo indica que la rejilla del enunciado limita el óptimo. En `r nrow(bordes)` de los `r nrow(pt)` métodos con parámetros por elegir el óptimo queda en un límite:
+
+```{r}
+#| label: tbl-bordes-2
+tabla(bordes)
+```
+
+En esos casos el resultado se lee con la cautela de que el óptimo podría estar fuera de la rejilla; el enunciado fija las rejillas y no se amplían. En Holt–Winters, que $\hat\beta$ y $\hat\gamma$ queden en $0{,}1$ (el mínimo de la rejilla) apunta a una pendiente y a un perfil estacional casi fijos: con $\alpha=\beta=\gamma=0$ el método reproduce la regresión de tendencia con ficticias estacionales (notas de clase), de modo que la rejilla pide acercarse a ese extremo.
+
+Las curvas y los mapas de MSE de un paso de cada parámetro elegido, con el óptimo marcado en rojo:
+
+```{r}
+#| label: fig-mse-s1
+#| layout-ncol: 2
+#| fig-width: 6
+#| fig-height: 4
+for (a in res[[1]]$ajustes) if (!is.null(a$opt) && length(a$parametros_elegidos[names(a$parametros_elegidos) != "s"]) <= 2) print(grafico_mse(a$opt, a$etiqueta))
+```
+
+```{r}
+#| label: fig-mse-s1-hw
+#| fig-height: 6
+for (a in res[[1]]$ajustes) if (!is.null(a$opt) && length(a$parametros_elegidos[names(a$parametros_elegidos) != "s"]) == 3) print(grafico_mse(a$opt, paste0(a$etiqueta, " (serie 1)")))
+```
+
+```{r}
+#| label: fig-mse-s2
+#| layout-ncol: 2
+#| fig-width: 6
+#| fig-height: 4
+for (a in res[[2]]$ajustes) if (!is.null(a$opt) && length(a$parametros_elegidos[names(a$parametros_elegidos) != "s"]) <= 2) print(grafico_mse(a$opt, paste0(a$etiqueta, " (serie 2)")))
+```
+
+```{r}
+#| label: fig-mse-s2-hw
+#| fig-height: 6
+for (a in res[[2]]$ajustes) if (!is.null(a$opt) && length(a$parametros_elegidos[names(a$parametros_elegidos) != "s"]) == 3) print(grafico_mse(a$opt, paste0(a$etiqueta, " (serie 2)")))
+```
+
+```{r}
+#| label: fig-mse-s3
+#| layout-ncol: 2
+#| fig-width: 6
+#| fig-height: 4
+for (a in res[[3]]$ajustes) if (!is.null(a$opt) && length(a$parametros_elegidos[names(a$parametros_elegidos) != "s"]) <= 2) print(grafico_mse(a$opt, paste0(a$etiqueta, " (serie 3)")))
+```
+
+```{r}
+#| label: fig-mse-s3-hw
+#| fig-height: 6
+for (a in res[[3]]$ajustes) if (!is.null(a$opt) && length(a$parametros_elegidos[names(a$parametros_elegidos) != "s"]) == 3) print(grafico_mse(a$opt, paste0(a$etiqueta, " (serie 3)")))
+```
+
+## Regresiones de tendencia: coeficientes, errores estándar robustos y residuos
+
+Para cada tendencia ajustada por mínimos cuadrados (con o sin ficticias) sobre toda la serie se reporta el coeficiente, el error estándar ordinario y el error estándar robusto a autocorrelación con núcleo de Bartlett (HAC, con $L = \lfloor 4(n/100)^{2/9}\rfloor$ rezagos), y la prueba $t$ **con el error robusto**. Cada fila de las tablas es una prueba de hipótesis con los seis elementos: (1) $H_0:\beta_j = 0$ contra $H_1:\beta_j \neq 0$; (2) el estadístico es $t = \hat\beta_j / EE_{HAC}(\hat\beta_j)$, que bajo $H_0$ se aproxima por una $t$ de Student con $n-k$ grados de libertad; (3) la región de rechazo al 5 % es $|t| > t_{0{,}975,\,n-k}$, cuyo valor crítico aparece en la tabla; (4) el valor observado de $t$ y su valor $p$ son las columnas respectivas; (5) la decisión se lee de la columna final; (6) la lectura se hace en el texto de cada serie. La serie exponencial se ajusta en logaritmos.
+
+```{r}
+#| label: reg-fun
+tabla_coef <- function(rg) {
+  mh <- rg$mco
+  crit <- qt(0.975, mh$gl)
+  data.frame(Término = mh$tabla$termino, Estimación = mh$tabla$estimacion, `EE ordinario` = mh$tabla$ee_ordinario,
+             `EE HAC` = mh$tabla$ee_hac, `t (HAC)` = mh$tabla$t_hac, `Valor crítico` = crit, `Valor p` = fp(mh$tabla$valor_p),
+             Decisión = ifelse(mh$tabla$valor_p < 0.05, "se rechaza H0", "no se rechaza H0"), check.names = FALSE)
+}
+tabla_resid <- function(i) {
+  dplyr::bind_rows(lapply(res[[i]]$regresiones, function(rg) {
+    data.frame(Regresión = rg$etiqueta, `Q (Ljung–Box)` = rg$lb$observado, `p (LB)` = fp(rg$lb$valor_p),
+               JB = rg$jb$observado, `p (JB)` = fp(rg$jb$valor_p), DW = rg$dw$d, `2(1 − r1)` = rg$dw$aprox_2_1_menos_r1,
+               check.names = FALSE)
+  }))
+}
+```
+
+### Serie 1
+
+```{r}
+#| label: tbl-reg-s1
+#| results: asis
+for (id in names(res[[1]]$regresiones)) {
+  rg <- res[[1]]$regresiones[[id]]
+  cat("\n\n**", rg$etiqueta, "** (n = ", rg$mco$n, ", k = ", rg$mco$k, ", $L$ = ", rg$mco$L, ")\n\n", sep = "")
+  print(tabla(tabla_coef(rg), digits = 4))
+}
+```
+
+```{r}
+#| label: tbl-resid-s1
+tabla(tabla_resid(1), digits = 3)
+```
+
+```{r}
+#| label: fig-resid-s1
+#| layout-ncol: 2
+#| fig-width: 6
+#| fig-height: 3.6
+for (rg in res[[1]]$regresiones) print(correlograma(rg$r, rg$mco$n, paste0("ACF de los residuos: ", rg$etiqueta, " (serie 1)")))
+```
+
+```{r}
+#| label: reg-s1-textos
+b1 <- res[[1]]$regresiones$tend_est
+l1 <- res[[1]]$regresiones$tend_lineal
+est_sig <- b1$mco$tabla$valor_p[-(1:2)] < 0.05
+no_sig <- b1$mco$tabla$termino[-(1:2)][!est_sig]
+meses_ns <- meses_abrev()[as.integer(sub("D([0-9]+)-D1", "\\1", no_sig))]  # la serie 1 empieza en enero: la estacion j es el mes j
+```
+
+En la tendencia lineal la pendiente es `r fnum(l1$mco$tabla$estimacion[2], 3)` mil turistas por mes; el error estándar ordinario es `r fnum(l1$mco$tabla$ee_ordinario[2], 4)` y el HAC `r fnum(l1$mco$tabla$ee_hac[2], 4)`, pero la inferencia importa poco aquí porque los residuos de esa recta no son ruido blanco: Ljung–Box rechaza con $p$ `r fp(l1$lb$valor_p)` y $DW =$ `r fnum(l1$dw$d, 3)`, cercano a $2(1-r_1) =$ `r fnum(l1$dw$aprox_2_1_menos_r1, 3)`: autocorrelación positiva fuerte, porque la recta deja entero el perfil estacional en los residuos. La tendencia con ficticias de suma cero estima una pendiente de `r fnum(b1$mco$tabla$estimacion[2], 3)` mil turistas por mes (EE HAC `r fnum(b1$mco$tabla$ee_hac[2], 4)`, $t =$ `r fnum(b1$mco$tabla$t_hac[2], 1)`), y `r sum(est_sig)` de los `r length(est_sig)` contrastes de ficticias rechazan $H_0$ (el efecto de los siguientes meses no se distingue del de enero: `r paste(meses_ns, collapse = ", ")`). Aun así los residuos conservan estructura: Ljung–Box rechaza ($p$ `r fp(b1$lb$valor_p)`), $DW =$ `r fnum(b1$dw$d, 3)` frente a $2(1-r_1) =$ `r fnum(b1$dw$aprox_2_1_menos_r1, 3)`, y Jarque–Bera rechaza normalidad ($p$ `r fp(b1$jb$valor_p)`). La razón es que la amplitud estacional crece con el nivel, algo que unos índices fijos de suma cero no pueden seguir (sección 3b).
+
+Con los seis elementos, la prueba de Ljung–Box sobre los residuos de la tendencia con ficticias de la serie 1:
+
+```{r}
+#| label: lb-reg-s1
+#| results: asis
+cat(imprimir_prueba(b1$lb), sep = "\n")
+```
+
+### Serie 2
+
+```{r}
+#| label: tbl-reg-s2
+#| results: asis
+for (id in names(res[[2]]$regresiones)) {
+  rg <- res[[2]]$regresiones[[id]]
+  cat("\n\n**", rg$etiqueta, "** (n = ", rg$mco$n, ", k = ", rg$mco$k, ", $L$ = ", rg$mco$L, ")\n\n", sep = "")
+  print(tabla(tabla_coef(rg), digits = 4))
+}
+```
+
+```{r}
+#| label: tbl-resid-s2
+tabla(tabla_resid(2), digits = 3)
+```
+
+```{r}
+#| label: fig-resid-s2
+#| layout-ncol: 2
+#| fig-width: 6
+#| fig-height: 3.6
+for (rg in res[[2]]$regresiones) print(correlograma(rg$r, rg$mco$n, paste0("ACF de los residuos: ", rg$etiqueta, " (serie 2)")))
+```
+
+```{r}
+#| label: reg-s2-textos
+l2 <- res[[2]]$regresiones$tend_lineal
+c2 <- res[[2]]$regresiones$tend_cuad
+```
+
+El error estándar HAC de la pendiente de la tendencia lineal es `r fnum(l2$mco$tabla$ee_hac[2], 4)` frente a `r fnum(l2$mco$tabla$ee_ordinario[2], 4)` del ordinario, `r fnum(l2$mco$tabla$ee_hac[2] / l2$mco$tabla$ee_ordinario[2], 1)` veces mayor: la autocorrelación positiva de los residuos hace que el ordinario subestime la incertidumbre. En la cuadrática el término $t^2$ es significativo con el error robusto ($t =$ `r fnum(c2$mco$tabla$t_hac[3], 2)`, $p$ `r fp(c2$mco$tabla$valor_p[3])`) y negativo: la serie sube y se aplana. Sin embargo, en las tres regresiones de esta serie los residuos conservan autocorrelación muy fuerte (Ljung–Box rechaza con $p$ `r fp(l2$lb$valor_p)`, `r fp(c2$lb$valor_p)` y `r fp(res[[2]]$regresiones$tend_exp$lb$valor_p)`; $DW$ de `r fnum(l2$dw$d, 2)`, `r fnum(c2$dw$d, 2)` y `r fnum(res[[2]]$regresiones$tend_exp$dw$d, 2)`, cercanos a $2(1-r_1)$): una tendencia determinista no describe esta serie, y la significancia de sus coeficientes no debe leerse como evidencia de que el modelo es correcto.
+
+Con los seis elementos, la prueba de Ljung–Box sobre los residuos de la cuadrática (la mejor de las tres en h = 9):
+
+```{r}
+#| label: lb-reg-s2
+#| results: asis
+cat(imprimir_prueba(c2$lb), sep = "\n")
+```
+
+### Serie 3
+
+```{r}
+#| label: tbl-reg-s3
+#| results: asis
+for (id in names(res[[3]]$regresiones)) {
+  rg <- res[[3]]$regresiones[[id]]
+  cat("\n\n**", rg$etiqueta, "** (n = ", rg$mco$n, ", k = ", rg$mco$k, ", $L$ = ", rg$mco$L, ")\n\n", sep = "")
+  print(tabla(tabla_coef(rg), digits = 4))
+}
+```
+
+```{r}
+#| label: tbl-resid-s3
+tabla(tabla_resid(3), digits = 3)
+```
+
+```{r}
+#| label: fig-resid-s3
+#| layout-ncol: 2
+#| fig-width: 6
+#| fig-height: 3.6
+for (rg in res[[3]]$regresiones) print(correlograma(rg$r, rg$mco$n, paste0("ACF de los residuos: ", rg$etiqueta, " (serie 3)")))
+```
+
+```{r}
+#| label: reg-s3-textos
+l3 <- res[[3]]$regresiones$tend_lineal
+c3 <- res[[3]]$regresiones$tend_cuad
+e3 <- res[[3]]$regresiones$tend_exp
+```
+
+La recta de la serie 3 tiene pendiente `r fnum(l3$mco$tabla$estimacion[2], 3)` estudiantes por mes (EE ordinario `r fnum(l3$mco$tabla$ee_ordinario[2], 4)`, EE HAC `r fnum(l3$mco$tabla$ee_hac[2], 4)`; $t =$ `r fnum(l3$mco$tabla$t_hac[2], 1)`) y un nivel de `r fnum(l3$mco$tabla$estimacion[1], 1)` estudiantes en $t=0$. Aquí los dos errores estándar casi coinciden, como corresponde a unos residuos sin autocorrelación: Ljung–Box no rechaza ($p =$ `r fp(l3$lb$valor_p)`), $DW =$ `r fnum(l3$dw$d, 3)` frente a $2(1-r_1) =$ `r fnum(l3$dw$aprox_2_1_menos_r1, 3)`, y Jarque–Bera no rechaza normalidad ($p =$ `r fp(l3$jb$valor_p)`). En la cuadrática el término $t^2$ no es significativo con el error robusto ($t =$ `r fnum(c3$mco$tabla$t_hac[3], 2)`, $p =$ `r fp(c3$mco$tabla$valor_p[3])`), de modo que la curvatura no se justifica y la recta basta. Es la única serie donde la tendencia determinista supera la validación de residuos.
+
+Con los seis elementos, la prueba de Ljung–Box (con $m = `r l3$m`$ y referida a $\chi^2_m$) y la de Jarque–Bera sobre los residuos de la recta:
+
+```{r}
+#| label: lb-reg-s3
+#| results: asis
+cat(imprimir_prueba(l3$lb), sep = "\n")
+cat("\n\n")
+cat(imprimir_prueba(l3$jb), sep = "\n")
+```
+
+## Origen móvil: tablas por horizonte
+
+Para cada serie, todos los métodos usan **los mismos orígenes**: $o = n_0,\dots,T-1$ para $h=1$ y $o = n_0,\dots,T-H$ para $h = H$. En cada origen el método recibe únicamente $y_1,\dots,y_o$, con los parámetros fijos elegidos en el tramo de estimación. Las tablas están ordenadas de menor a mayor RMSE, el **referente** es una fila más (en negrita) y los métodos que no lo superan se quedan en la tabla. RMSE y MAD están en la unidad de la serie; MAPE en porcentaje. "Razón" es el RMSE del método dividido por el del referente: menor que 1 significa que lo supera.
+
+```{r}
+#| label: tbl-fun-om
+tabla_om <- function(tb) {
+  d <- data.frame(Método = tb$metodo, Papel = tb$rol, Parámetros = bonito(tb$parametros), n = tb$n, RMSE = tb$rmse, MAD = tb$mad,
+                  MAPE = tb$mape, Razón = tb$razon_rmse_ref, `¿Supera al referente?` = ifelse(tb$rol == "referente", "—", ifelse(tb$supera_referente, "sí", "no")),
+                  check.names = FALSE)
+  d$Método <- ifelse(tb$rol == "referente", paste0("**", tb$metodo, "**"), tb$metodo)
+  tabla(d, digits = 3)
+}
+```
+
+### Serie 1 (referente: ingenuo estacional, $s = 12$)
+
+El perfil de la serie 1 se repite cada 12 meses (sección 3b), así que el referente honesto es el ingenuo estacional, que pronostica cada mes con el mismo mes del año anterior; el ingenuo simple ignoraría la estacionalidad y sería un referente demasiado fácil de superar.
+
+```{r}
+#| label: tbl-om1-h1
+#| results: asis
+cat("\n**Horizonte h = 1** (", tb1[[1]]$n[1], " orígenes)\n\n", sep = "")
+tabla_om(tb1[[1]])
+```
+
+```{r}
+#| label: tbl-om1-H
+#| results: asis
+cat("\n**Horizonte h = ", H[1], "** (", tbH[[1]]$n[1], " orígenes)\n\n", sep = "")
+tabla_om(tbH[[1]])
+```
+
+```{r}
+#| label: om1-textos
+g1 <- mejor(tb1[[1]]); r1f <- refe(tb1[[1]]); gH1 <- mejor(tbH[[1]]); rH1 <- refe(tbH[[1]])
+```
+
+En $h = 1$, Holt–Winters multiplicativo (`r bonito(g1$parametros)`) tiene un RMSE de `r fnum(g1$rmse, 3)` miles de turistas frente a `r fnum(r1f$rmse, 3)` del referente (razón `r fnum(g1$razon_rmse_ref, 2)`): reduce el error `r fpct(1 - g1$razon_rmse_ref, 0)`. Holt–Winters aditivo es el segundo (`r fnum(tb1[[1]]$rmse[2], 3)`; razón `r fnum(tb1[[1]]$razon_rmse_ref[2], 2)`). La tendencia con ficticias de suma cero **no supera al referente** (RMSE `r fnum(tb1[[1]]$rmse[tb1[[1]]$id == "tend_est"], 3)`, razón `r fnum(tb1[[1]]$razon_rmse_ref[tb1[[1]]$id == "tend_est"], 2)`): impone índices fijos y una amplitud constante en una serie cuya amplitud crece con el nivel. Los contrastes que ignoran la estacionalidad (Holt, tendencia lineal, SES y media) quedan con razones de `r fnum(min(tb1[[1]]$razon_rmse_ref[tb1[[1]]$rol == "contraste"]), 1)` a `r fnum(max(tb1[[1]]$razon_rmse_ref[tb1[[1]]$rol == "contraste"]), 1)`, como era de esperar. En $h = `r H[1]`$ el orden es el mismo, con RMSE de `r fnum(gH1$rmse, 3)` para el ganador y `r fnum(rH1$rmse, 3)` para el referente (razón `r fnum(gH1$razon_rmse_ref, 2)`): el error crece con el horizonte, pero la ventaja sobre el referente se mantiene.
+
+### Serie 2 (referente: ingenuo)
+
+La serie 2 no tiene estacionalidad semanal (sección 3b), de modo que el referente es el ingenuo simple, el último dato observado.
+
+```{r}
+#| label: tbl-om2-h1
+#| results: asis
+cat("\n**Horizonte h = 1** (", tb1[[2]]$n[1], " orígenes)\n\n", sep = "")
+tabla_om(tb1[[2]])
+```
+
+```{r}
+#| label: tbl-om2-H
+#| results: asis
+cat("\n**Horizonte h = ", H[2], "** (", tbH[[2]]$n[1], " orígenes)\n\n", sep = "")
+tabla_om(tbH[[2]])
+```
+
+```{r}
+#| label: om2-textos
+g2 <- mejor(tb1[[2]]); r2f <- refe(tb1[[2]]); gH2 <- mejor(tbH[[2]]); rH2 <- refe(tbH[[2]])
+ie2 <- tbH[[2]][tbH[[2]]$id == "ingenuo_est", ]
+mm2 <- tbH[[2]][tbH[[2]]$id == "mm", ]
+```
+
+En $h = 1$ la ventaja es pequeña: SES con $\alpha =$ `r fnum(res[[2]]$ajustes$ses$parametros$alpha, 2)` tiene un RMSE de `r fnum(g2$rmse, 3)` habitaciones frente a `r fnum(r2f$rmse, 3)` del referente (razón `r fnum(g2$razon_rmse_ref, 3)`, una mejora de `r fpct(1 - g2$razon_rmse_ref, 1)`), y solo `r sum(tb1[[2]]$supera_referente)` de los `r nrow(tb1[[2]]) - 1` métodos distintos del referente lo superan. Con 36 orígenes, una diferencia de ese tamaño no permite afirmar que SES sea mejor que el último dato. Las tendencias deterministas lineal y exponencial y la media quedan muy por detrás (razones de `r fnum(min(tb1[[2]]$razon_rmse_ref[tb1[[2]]$id %in% c("tend_lineal", "tend_exp", "media")]), 1)` a `r fnum(max(tb1[[2]]$razon_rmse_ref[tb1[[2]]$id %in% c("tend_lineal", "tend_exp", "media")]), 1)`): ignoran que el nivel ya se estabilizó. En $h = `r H[2]`$ gana la tendencia cuadrática (RMSE `r fnum(gH2$rmse, 3)`, razón `r fnum(gH2$razon_rmse_ref, 2)`), que con un parámetro cuadrático negativo pronostica una ligera baja del nivel; pierde en $h = 1$ (razón `r fnum(tb1[[2]]$razon_rmse_ref[tb1[[2]]$id == "tend_cuad"], 2)`) y gana en $h = 9$: el ganador depende del horizonte.
+
+Un resultado hay que decirlo sin esconderlo: en $h = `r H[2]`$ el ingenuo estacional de período 7, que es un **contraste** cuyo supuesto la descomposición contradice, supera al referente (RMSE `r fnum(ie2$rmse, 3)`, razón `r fnum(ie2$razon_rmse_ref, 2)`). No es evidencia de estacionalidad semanal: con $h = 9$ ese método pronostica con el dato de hace cinco días y no con el último, y como el último dato es ruidoso ($r_1$ de $\nabla Y$ vale `r fnum(dep[[2]]$r[1], 2)`), es esperable que métodos que no se apoyan solo en él mejoren al referente; la media móvil MM(`r mm2$parametros`) y SES, que no suponen estacionalidad, también lo superan en $h = `r H[2]`$ (razones `r fnum(mm2$razon_rmse_ref, 2)` y `r fnum(tbH[[2]]$razon_rmse_ref[tbH[[2]]$id == "ses"], 2)`). La evidencia de la sección 3 contra la estacionalidad semanal no cambia por este resultado.
+
+### Serie 3 (referente: ingenuo)
+
+La serie 3 no tiene estacionalidad (sección 3b); el referente es el ingenuo simple.
+
+```{r}
+#| label: tbl-om3-h1
+#| results: asis
+cat("\n**Horizonte h = 1** (", tb1[[3]]$n[1], " orígenes)\n\n", sep = "")
+tabla_om(tb1[[3]])
+```
+
+```{r}
+#| label: tbl-om3-H
+#| results: asis
+cat("\n**Horizonte h = ", H[3], "** (", tbH[[3]]$n[1], " orígenes)\n\n", sep = "")
+tabla_om(tbH[[3]])
+```
+
+```{r}
+#| label: om3-textos
+g3 <- mejor(tb1[[3]]); r3f <- refe(tb1[[3]]); gH3 <- mejor(tbH[[3]]); rH3 <- refe(tbH[[3]])
+top5_1 <- tb1[[3]][tb1[[3]]$rol != "referente", ][1:5, ]
+top5_H <- tbH[[3]][tbH[[3]]$rol != "referente", ][1:5, ]
+```
+
+En $h = 1$ gana la tendencia lineal (RMSE `r fnum(g3$rmse, 2)` estudiantes, razón `r fnum(g3$razon_rmse_ref, 2)`, es decir `r fpct(1 - g3$razon_rmse_ref, 0)` menos error que el referente), y en $h = `r H[3]`$ gana la doble media móvil con $k =$ `r res[[3]]$ajustes$dmm$parametros$k` (RMSE `r fnum(gH3$rmse, 2)`, razón `r fnum(gH3$razon_rmse_ref, 2)`). Pero los cinco mejores métodos están muy cerca: sus RMSE en $h=1$ van de `r fnum(min(top5_1$rmse), 2)` a `r fnum(max(top5_1$rmse), 2)` (una diferencia de `r fpct(max(top5_1$rmse) / min(top5_1$rmse) - 1, 1)`) y en $h = `r H[3]`$ de `r fnum(min(top5_H$rmse), 2)` a `r fnum(max(top5_H$rmse), 2)` (`r fpct(max(top5_H$rmse) / min(top5_H$rmse) - 1, 1)`), con solo `r tb1[[3]]$n[1]` y `r tbH[[3]]$n[1]` orígenes. Con esa evidencia, el ganador de cada horizonte no se distingue con seguridad del segundo; lo que sí está claro es que todas las formas de tendencia superan al referente y que la media simple y el ingenuo estacional quedan peor que él. El ingenuo es un referente débil en esta serie: el último dato arrastra su propio ruido, y los métodos que promedian o ajustan una tendencia lo reducen. Que los ganadores difieran entre horizontes no se puede explicar con certeza con esta evidencia: la doble media móvil con $k = `r res[[3]]$ajustes$dmm$parametros$k`$ (usa `r 2 * res[[3]]$ajustes$dmm$parametros$k - 1` observaciones para su primer pronóstico) gana en $h = `r H[3]`$ con una ventaja de solo `r fnum(tbH[[3]]$rmse[tbH[[3]]$id == "tend_lineal"] - gH3$rmse, 2)` estudiantes de RMSE sobre la recta, una diferencia que los `r tbH[[3]]$n[1]` orígenes no permiten distinguir del azar.
+
+## Validación del ganador en $h = 1$
+
+La validación se hace sobre los **errores de origen móvil a un paso del ganador de $h=1$**, no sobre los residuos del ajuste: son los errores que de verdad se cometerían al pronosticar. Como hay pocos errores ($n =$ `r res[[1]]$validacion$n`, `r res[[2]]$validacion$n` y `r res[[3]]$validacion$n`), se usa $m \approx n/4$ rezagos para Ljung–Box, la regla de las notas de clase ($m =$ `r res[[1]]$validacion$m`, `r res[[2]]$validacion$m` y `r res[[3]]$validacion$m`), y la banda del correlograma se calcula sobre el número de errores. Con tan pocos errores las pruebas tienen poca potencia: que no rechacen es compatible con ausencia de estructura, pero no la demuestra.
+
+```{r}
+#| label: fun-val
+validacion_figura <- function(i) {
+  v <- res[[i]]$validacion
+  g <- res[[i]]$ajustes[[v$id]]
+  diaria <- series[[i]]$frecuencia == "diaria"
+  print(grafico_errores(v$e, v$fechas_objetivo, series[[i]]$unidad, paste0("Errores de origen móvil a un paso: ", g$etiqueta, " (serie ", i, ")"),
+                        if (diaria) "1 week" else NULL, if (diaria) "%m-%d" else "%Y-%m"))
+  print(correlograma(v$r, v$n, paste0("ACF de los errores (m = ", v$m, ")")))
+}
+validacion_pruebas <- function(i) {
+  v <- res[[i]]$validacion
+  cat(imprimir_prueba(v$media), sep = "\n"); cat("\n\n")
+  cat(imprimir_prueba(v$lb), sep = "\n"); cat("\n\n")
+  cat(imprimir_prueba(v$jb), sep = "\n"); cat("\n\n")
+  cat("**Durbin–Watson.** $d =$ ", fnum(v$dw$d, 3), "; la aproximación $2(1-r_1) =$ ", fnum(v$dw$aprox_2_1_menos_r1, 3), " con $r_1 =$ ", fnum(v$dw$r1, 3),
+      ". Lectura: ", v$dw$lectura, ".\n\n", sep = "")
+}
+```
+
+### Serie 1: Holt–Winters multiplicativo
+
+```{r}
+#| label: fig-val-s1
+#| fig-height: 3.6
+validacion_figura(1)
+```
+
+```{r}
+#| label: pru-val-s1
+#| results: asis
+validacion_pruebas(1)
+```
+
+### Serie 2: suavizamiento exponencial simple
+
+```{r}
+#| label: fig-val-s2
+#| fig-height: 3.6
+validacion_figura(2)
+```
+
+```{r}
+#| label: pru-val-s2
+#| results: asis
+validacion_pruebas(2)
+```
+
+### Serie 3: tendencia lineal
+
+```{r}
+#| label: fig-val-s3
+#| fig-height: 3.6
+validacion_figura(3)
+```
+
+```{r}
+#| label: pru-val-s3
+#| results: asis
+validacion_pruebas(3)
+```
+
+```{r}
+#| label: val-textos
+vs <- lapply(res, function(r) r$validacion)
+fuera <- lapply(vs, function(v) which(abs(v$r) > v$banda_rb))
+```
+
+**Lectura conjunta.** En las tres series ningún rezago de la ACF de los errores sale de la banda (`r length(fuera[[1]]) + length(fuera[[2]]) + length(fuera[[3]])` rezagos fuera en total), la media de los errores no se distingue de cero y Ljung–Box no rechaza, de modo que no se detecta estructura sin aprovechar a un paso. Jarque–Bera tampoco rechaza normalidad, lo que respalda leer la banda de pronóstico de $\pm 1{,}96$ desviaciones como una regla razonable (siempre heurística). El estadístico de Durbin–Watson es `r fnum(vs[[1]]$dw$d, 2)` en la serie 1, `r fnum(vs[[2]]$dw$d, 2)` en la serie 2 y `r fnum(vs[[3]]$dw$d, 2)` en la serie 3, sin desvíos apreciables de 2. La advertencia que corresponde es la de potencia: con `r vs[[1]]$n`, `r vs[[2]]$n` y `r vs[[3]]$n` errores, estas pruebas solo detectarían una autocorrelación grande. Por eso, además de las pruebas, importa que la comparación con el referente se haya hecho sobre los mismos orígenes.
+
+## Pronóstico final
+
+Con el método ganador reajustado sobre **toda** la serie se pronostican los $H$ períodos siguientes. Como el pronóstico responde a la pregunta de horizonte $H$, se usa el ganador de $h = H$ de cada serie. La banda es **heurística**: pronóstico $\pm 1{,}96$ veces la desviación estándar de los errores de origen móvil a cada horizonte. No es un intervalo de confianza, no tiene una cobertura garantizada y, con `r tbH[[1]]$n[1]`, `r tbH[[2]]$n[1]` y `r tbH[[3]]$n[1]` errores por horizonte, la desviación que usa está estimada con poca información.
+
+```{r}
+#| label: fun-pron
+tabla_pron <- function(i) {
+  p <- res[[i]]$pronostico
+  d <- data.frame(h = p$h, Fecha = ffecha(p$fecha), Pronóstico = p$pronostico, `Desv. de los errores` = p$sd_error,
+                  `Banda inferior` = p$banda_inf, `Banda superior` = p$banda_sup, check.names = FALSE)
+  if (series[[i]]$frecuencia == "diaria") {
+    d <- cbind(d[1:2], Día = c("dom", "lun", "mar", "mié", "jue", "vie", "sáb")[as.POSIXlt(p$fecha)$wday + 1], d[3:6])
+  }
+  tabla(d, digits = 1)
+}
+grafico_final <- function(i) {
+  diaria <- series[[i]]$frecuencia == "diaria"
+  print(grafico_pronostico(datos[[i]]$fecha, datos[[i]]$valor, res[[i]]$pronostico, series[[i]]$unidad,
+                           res[[i]]$ajustes[[res[[i]]$ganador_H]]$etiqueta, ultimos = if (diaria) 40 else 48,
+                           date_breaks = if (diaria) "1 week" else NULL, date_labels = if (diaria) "%Y-%m-%d" else "%Y-%m"))
+}
+```
+
+### Serie 1: Holt–Winters multiplicativo
+
+```{r}
+#| label: fig-fin-s1
+grafico_final(1)
+```
+
+```{r}
+#| label: tbl-fin-s1
+tabla_pron(1)
+```
+
+### Serie 2: tendencia cuadrática
+
+```{r}
+#| label: fig-fin-s2
+grafico_final(2)
+```
+
+```{r}
+#| label: tbl-fin-s2
+tabla_pron(2)
+```
+
+### Serie 3: doble media móvil
+
+```{r}
+#| label: fig-fin-s3
+grafico_final(3)
+```
+
+```{r}
+#| label: tbl-fin-s3
+tabla_pron(3)
+```
+
+```{r}
+#| label: fin-textos
+p1 <- res[[1]]$pronostico; p2 <- res[[2]]$pronostico; p3 <- res[[3]]$pronostico
+```
+
+En la serie 1 el pronóstico repite el perfil de dos temporadas altas: el máximo de los próximos 12 meses es `r fnum(max(p1$pronostico), 1)` mil turistas en `r format(p1$fecha[which.max(p1$pronostico)], "%Y-%m")` y el mínimo `r fnum(min(p1$pronostico), 1)` mil en `r format(p1$fecha[which.min(p1$pronostico)], "%Y-%m")`; la semi-amplitud de la banda va de `r fnum(1.96 * min(p1$sd_error), 1)` a `r fnum(1.96 * max(p1$sd_error), 1)` mil. En la serie 2 el pronóstico es casi plano (de `r fnum(p2$pronostico[1], 1)` a `r fnum(p2$pronostico[nrow(p2)], 1)` habitaciones) con una semi-amplitud de `r fnum(1.96 * min(p2$sd_error), 1)` a `r fnum(1.96 * max(p2$sd_error), 1)` habitaciones; que la parábola ajustada baje ligeramente no debe leerse como una predicción de caída: es la curvatura que dejó la subida inicial, y la banda es varias veces mayor que la baja. En la serie 3 el pronóstico crece de `r fnum(p3$pronostico[1], 1)` a `r fnum(p3$pronostico[nrow(p3)], 1)` estudiantes en seis meses con una semi-amplitud de `r fnum(1.96 * min(p3$sd_error), 1)` a `r fnum(1.96 * max(p3$sd_error), 1)`.

@@ -4,16 +4,8 @@
 for (f in sort(list.files("R", pattern = "\\.R$", full.names = TRUE))) source(f, encoding = "UTF-8")
 source("analisis/verificaciones.R", encoding = "UTF-8")
 
-# Metadatos de las series. H de la serie 2 pendiente de decision (7 o 9).
-# ks: rezagos del grafico de rezagos; s_cand: periodos estacionales a examinar.
-series <- list(
-  list(id = 1, nombre = "Llegadas mensuales de turistas (Bahia Serena)", unidad = "miles de personas",
-       frecuencia = "mensual", H = 12, ks = c(1, 6, 12), s_cand = 12),
-  list(id = 2, nombre = "Habitaciones ocupadas por noche (Hotel Portal de la Bahia)", unidad = "habitaciones",
-       frecuencia = "diaria", H = 9, ks = c(1, 7), s_cand = 7, date_breaks = "1 month"),
-  list(id = 3, nombre = "Estudiantes matriculados en cursos virtuales", unidad = "estudiantes",
-       frecuencia = "mensual", H = 6, ks = c(1, 6, 12), s_cand = c(12, 6))
-)
+# Metadatos de las series (R/09-config.R).
+series <- definir_series()
 
 datos <- lapply(series, function(s) leer_serie(sprintf("datos/ST8ZPT-serie-%d.csv", s$id)))
 
@@ -50,15 +42,7 @@ guardar(grafico_descomposicion(datos[[1]], descomposicion_clasica(datos[[1]]$val
         "serie1-descomposicion.png", h = 7)
 
 # --- Seccion 4: operador de rezago, candidatas y raices ---
-cand <- function(nombre, log = FALSE, d = 0, D = 0, s = 1, tend = NULL) list(nombre = nombre, log = log, d = d, D = D, s = s, tend = tend)
-candidatas <- list(
-  list(cand("Y"), cand("log Y", log = TRUE), cand("(1-B) log Y", TRUE, 1), cand("(1-B^12) log Y", TRUE, 0, 1, 12),
-       cand("(1-B)(1-B^12) log Y", TRUE, 1, 1, 12), cand("(1-B)(1-B^12) Y", FALSE, 1, 1, 12)),
-  list(cand("Y"), cand("(1-B) Y", FALSE, 1), cand("(1-B)^2 Y", FALSE, 2), cand("(1-B^7) Y", FALSE, 0, 1, 7),
-       cand("(1-B) log Y", TRUE, 1)),
-  list(cand("Y"), cand("(1-B) Y", FALSE, 1), cand("(1-B)^2 Y", FALSE, 2), cand("(1-B^6) Y", FALSE, 0, 1, 6),
-       cand("(1-B^12) Y", FALSE, 0, 1, 12), cand("log Y", TRUE), cand("Y - tendencia lineal", tend = 1))
-)
+candidatas <- definir_candidatas()
 tabla_cand <- lapply(seq_along(series), function(i) evaluar_candidatas(datos[[i]]$valor, candidatas[[i]]))
 for (i in seq_along(series)) { cat("\nSerie", i, "- candidatas\n"); print(as.data.frame(tabla_cand[[i]])) }
 
@@ -82,11 +66,7 @@ for (i in seq_along(series)) {
 
 # --- Seccion 5: dependencia sobre la serie transformada ELEGIDA ---
 # Elegidas: S1 = (1-B)(1-B^12) log Y; S2 = (1-B) Y; S3 = Y - tendencia lineal (MCO).
-elegida <- list(
-  cand("(1-B)(1-B^12) log Y", TRUE, 1, 1, 12),
-  cand("(1-B) Y", FALSE, 1),
-  cand("Y - tendencia lineal", tend = 1)
-)
+elegida <- definir_elegidas()
 m5 <- 24  # m para Ljung-Box y correlogramas de la serie transformada (ver justificacion en el informe)
 dep <- list()
 for (i in seq_along(series)) {
@@ -153,3 +133,6 @@ for (i in seq_along(series)) {
   res$ajustes <- lapply(res$ajustes, function(a) { a$ajustar <- NULL; a })  # las funciones no se guardan en el .rds
   saveRDS(res, sprintf("resultados/serie%d.rds", i))
 }
+
+# --- Sesion: sessionInfo() de la maquina que corre el analisis ---
+writeLines(capture.output(sessionInfo()), "sesion-info.txt")

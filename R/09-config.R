@@ -7,9 +7,9 @@
 #   ks: rezagos del grafico de rezagos; s_cand: periodos estacionales a examinar (el primero es el que se usa en la seccion 6).
 definir_series <- function() {
   list(
-    list(id = 1, nombre = "Llegadas mensuales de turistas (Bahia Serena)", unidad = "miles de personas",
+    list(id = 1, nombre = "Llegadas mensuales de turistas (Bahía Serena)", unidad = "miles de personas",
          frecuencia = "mensual", H = 12, ks = c(1, 6, 12), s_cand = 12),
-    list(id = 2, nombre = "Habitaciones ocupadas por noche (Hotel Portal de la Bahia)", unidad = "habitaciones",
+    list(id = 2, nombre = "Habitaciones ocupadas por noche (Hotel Portal de la Bahía)", unidad = "habitaciones",
          frecuencia = "diaria", H = 9, ks = c(1, 7), s_cand = 7, date_breaks = "1 month"),
     list(id = 3, nombre = "Estudiantes matriculados en cursos virtuales", unidad = "estudiantes",
          frecuencia = "mensual", H = 6, ks = c(1, 6, 12), s_cand = c(12, 6))

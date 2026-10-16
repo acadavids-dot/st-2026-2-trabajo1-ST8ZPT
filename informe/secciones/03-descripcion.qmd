@@ -60,7 +60,7 @@ tabla(data.frame(
 #| label: dec-s1
 dm1 <- descomposicion_clasica(datos[[1]]$valor, 12, "multiplicativa")
 da1 <- descomposicion_clasica(datos[[1]]$valor, 12, "aditiva")
-amp <- sapply(1:15, function(i) diff(range(datos[[1]]$valor[((i - 1) * 12 + 1):(i * 12)])))
+amp <- sapply(1:15, function(i) {v <- datos[[1]]$valor[((i - 1) * 12 + 1):(i * 12)]; max(v) - min(v)})
 niv <- sapply(1:15, function(i) mean(datos[[1]]$valor[((i - 1) * 12 + 1):(i * 12)]))
 ```
 
